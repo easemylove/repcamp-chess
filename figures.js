@@ -1,6 +1,6 @@
 // Кубиковые человечки: лагерь (белые) против оргов (чёрные).
 import * as THREE from 'three';
-import { mat, canvasTex, imgTex, rnd, C } from './gfx.js';
+import { mat, canvasTex, imgTex, rnd, C } from './gfx.js?v=1794083424';
 
 const SKIN = ['#f2c9a0', '#e0b088', '#c98f66', '#ffdcbc', '#a8724e'];
 const G = {}; // кэш геометрий

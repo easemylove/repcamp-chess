@@ -1,6 +1,6 @@
 // Мир: зимняя Terra Nostra ночью. Доска на поляне, дома-«континенты», костёр, баня, столовая, лес, снег.
 import * as THREE from 'three';
-import { mat, retroize, canvasTex, imgTex, noiseTex, rnd, C, regTex } from './gfx.js';
+import { mat, retroize, canvasTex, imgTex, noiseTex, rnd, C, regTex } from './gfx.js?v=1794083424';
 
 export const BT = 0.32;           // верх доски
 export const SQ = 1;              // размер клетки

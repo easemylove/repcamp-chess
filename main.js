@@ -1,10 +1,10 @@
 // Rep Camp Chess — партия, режимы, камера, сценки, интерфейс.
 import * as THREE from 'three';
-import { Retro, mat, C } from './gfx.js';
-import { buildWorld, BT } from './world.js';
-import { makePiece } from './figures.js';
-import { initAudio, sfx, setMusic, setSfx } from './audio.js';
-import { CHAPTERS, preparePuzzle } from './story.js';
+import { Retro, mat, C } from './gfx.js?v=1794083424';
+import { buildWorld, BT } from './world.js?v=1794083424';
+import { makePiece } from './figures.js?v=1794083424';
+import { initAudio, sfx, setMusic, setSfx } from './audio.js?v=1794083424';
+import { CHAPTERS, preparePuzzle } from './story.js?v=1794083424';
 
 const $ = s => document.querySelector(s);
 const Chess = window.Chess;
@@ -329,7 +329,7 @@ const SIDE = { w: 'лагерь', b: 'орги' };
 let engine, engCb;
 function eng() {
   if (engine) return engine;
-  engine = new Worker('stockfish.js');
+  engine = new Worker('stockfish.js?v=1794083424');
   engine.onmessage = e => { const l = String(e.data); if (engCb && l.startsWith('bestmove')) { const c = engCb; engCb = null; c(l.split(/\s+/)[1]); } };
   engine.postMessage('uci'); engine.postMessage('isready');
   return engine;
