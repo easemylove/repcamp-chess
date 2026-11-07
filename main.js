@@ -14,8 +14,6 @@ const LS = { get(k) { try { return localStorage.getItem(k); } catch (_) { return
 let saved = {}; try { saved = JSON.parse(LS.get('rcSet') || '{}'); } catch (_) {}
 const SET = Object.assign({ gfx: 'ps1', crt: false, scenes: true, music: true, sfx: true, sharp: 240, flip: true, mini: true }, saved);
 const saveSet = () => LS.set('rcSet', JSON.stringify(SET));
-// онлайн нужен WebRTC; в песочнице (например, в артефакте claude.ai) его нет
-const RTC_OK = (() => { try { if (!window.RTCPeerConnection || !window.Peer) return false; new RTCPeerConnection().close(); return true; } catch (_) { return false; } })();
 
 // ---------- рендер ----------
 const retro = new Retro($('#c'));
@@ -500,7 +498,7 @@ document.querySelectorAll('[data-lvl]').forEach(b => b.addEventListener('click',
 bind('#sideW', () => { $('#sideW').classList.add('sel'); $('#sideB').classList.remove('sel'); });
 bind('#sideB', () => { $('#sideB').classList.add('sel'); $('#sideW').classList.remove('sel'); });
 bind('#hot', () => startGame('hot'));
-bind('#menuBtn', () => { if (mode === 'online' && conn) { conn.send({ t: 'bye' }); conn.close(); conn = null; } toMenu(); });
+bind('#menuBtn', () => { if (mode === 'online' && conn) conn.send({ t: 'bye' }); if (mode === 'online') closeRelay(); toMenu(); });
 bind('#viewBtn', () => { const seq = ['w', 'side', 'b', 'side']; viewI = (viewI + 1) % 4; setView(seq[viewI]); });
 bind('#topBtn', () => top ? setView(mode === 'hot' ? game.turn() : mySide) : setView('top'));
 bind('#undo', () => { if (busy) return; if (mode === 'ai') { game.undo(); if (game.turn() !== mySide) game.undo(); } else game.undo(); rebuild(); updHud(); viewForTurn(); });
@@ -529,41 +527,51 @@ tog('#sMusic', () => SET.music = !SET.music);
 tog('#sSfx', () => SET.sfx = !SET.sfx);
 renderSet();
 
-// ---------- онлайн (PeerJS, напрямую) ----------
-let peer, conn;
+// ---------- онлайн (ходы через открытый ретранслятор ntfy.sh: работает через любой NAT, без регистрации) ----------
+const RELAY = 'https://ntfy.sh/';
+const myId = Math.random().toString(36).slice(2, 10);
+let conn = null, relay = null, helloT = null;
+function openRelay(topic, onMsg, onOpen, onFail) {
+  closeRelay();
+  let es; try { es = new EventSource(RELAY + topic + '/sse'); } catch (_) { onFail(); return null; }
+  let opened = false; const seen = new Set();
+  es.onopen = () => { if (!opened) { opened = true; onOpen(); } };
+  es.onmessage = e => { try { const d = JSON.parse(e.data); if (d.event !== 'message' || seen.has(d.id)) return; seen.add(d.id); const m = JSON.parse(d.message); if (m.who !== myId) onMsg(m); } catch (_) {} };
+  es.onerror = () => { if (!opened) { es.close(); onFail(); } };
+  relay = { topic, send: o => fetch(RELAY + topic, { method: 'POST', body: JSON.stringify({ ...o, who: myId }) }).catch(() => status('сообщение не ушло, проверь интернет')), close() { es.close(); } };
+  return relay;
+}
+function closeRelay() { clearInterval(helloT); if (relay) relay.close(); relay = null; conn = null; }
+const noNet = () => { $('#onState').textContent = 'онлайн тут не работает: страница не пускает в интернет. открой игру по ссылке easemylove.github.io/repcamp-chess'; };
 function onlineMsg(d) {
-  if (d.t === 'start') { startGame('online', {}); mySide = 'b'; setView('b'); updHud(); }
+  if (d.t === 'start') { clearInterval(helloT); conn = relay; startGame('online', {}); mySide = 'b'; setView('b'); updHud(); pop('ПОЕХАЛИ', C.myata); }
   if (d.t === 'move') queueMove({ from: d.from, to: d.to, promotion: d.promotion });
   if (d.t === 'again') { startGame('online'); updHud(); }
   if (d.t === 'bye') { status('соперник вышел'); pop('СОПЕРНИК УШЁЛ', C.limonad); conn = null; updHud(); }
 }
-function wire(c) {
-  conn = c;
-  c.on('data', onlineMsg);
-  c.on('close', () => { if (mode === 'online') { status('связь пропала'); conn = null; updHud(); } });
-}
+let guestId = null;
 function hostOnline() {
-  if (!RTC_OK) { $('#onState').textContent = 'тут онлайн не работает: эта страница не пускает прямые соединения. открой игру по обычной ссылке'; return; }
   const code = Math.random().toString(36).slice(2, 7);
-  show('online'); $('#onState').textContent = 'открываем комнату…'; $('#onLink').value = '';
-  peer && peer.destroy();
-  peer = new window.Peer('repcamp-' + code);
-  peer.on('open', () => {
-    const url = location.origin + location.pathname + '?join=' + code;
-    $('#onLink').value = url; $('#onState').textContent = 'кинь ссылку другу. ты играешь за лагерь';
-  });
-  peer.on('connection', c => { c.on('open', () => { wire(c); mySide = 'w'; startGame('online'); mySide = 'w'; setView('w'); c.send({ t: 'start' }); updHud(); }); });
-  peer.on('error', e => { $('#onState').textContent = 'не вышло: ' + e.type + '. попробуй ещё раз или другой интернет'; });
+  show('online'); $('#onState').textContent = 'открываем комнату…'; $('#onLink').value = ''; guestId = null;
+  openRelay('repcamp-' + code, d => {
+    if (d.t === 'hello') {
+      if (!guestId) { guestId = d.who; conn = relay; mySide = 'w'; startGame('online'); mySide = 'w'; setView('w'); updHud(); pop('ПОЕХАЛИ', C.malina); }
+      if (d.who === guestId) relay.send({ t: 'start', fen: game.fen() });
+      return;
+    }
+    if (d.who === guestId) onlineMsg(d);
+  }, () => {
+    $('#onLink').value = location.origin + location.pathname + '?join=' + code;
+    $('#onState').textContent = 'кинь ссылку другу. ты играешь за лагерь, игра начнётся, когда он зайдёт';
+  }, noNet);
 }
 function joinOnline(code) {
   show('online'); $('#onState').textContent = 'подключаемся к другу…'; $('#onLink').value = '';
-  peer = new window.Peer();
-  peer.on('open', () => {
-    const c = peer.connect('repcamp-' + code, { reliable: true }); let ok = false;
-    c.on('open', () => { ok = true; wire(c); $('#onState').textContent = 'есть контакт!'; });
-    setTimeout(() => { if (!ok) $('#onState').textContent = 'не пробивается. попробуйте оба через wi-fi или пусть друг создаст комнату сам'; }, 15000);
-  });
-  peer.on('error', e => { $('#onState').textContent = 'не подключились (' + e.type + '). проверь ссылку или включи wi-fi'; });
+  let tries = 0;
+  openRelay('repcamp-' + code, d => { if (d.t === 'start' && conn) return; onlineMsg(d); }, () => {
+    const hello = () => { if (conn) return clearInterval(helloT); if (++tries > 20) { clearInterval(helloT); $('#onState').textContent = 'друг не отвечает. пусть откроет комнату заново и пришлёт новую ссылку'; return; } relay.send({ t: 'hello' }); };
+    hello(); helloT = setInterval(hello, 2500);
+  }, noNet);
 }
 bind('#onHost', hostOnline);
 bind('#onCopy', () => { const v = $('#onLink').value; if (!v) return; if (navigator.share) navigator.share({ title: 'Rep Camp Chess', text: 'го партию: лагерь против оргов', url: v }).catch(() => {}); else navigator.clipboard.writeText(v).then(() => $('#onState').textContent = 'ссылка скопирована'); });
