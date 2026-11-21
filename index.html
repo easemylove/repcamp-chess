@@ -41,6 +41,9 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .panel .row{display:flex;gap:8px;margin:0 0 10px}
 .panel .row button{flex:1;font-family:"Manrope";font-weight:800;font-size:15px;padding:8px;border:2px solid var(--pap);opacity:.6}
 .panel .row button.sel{opacity:1;background:var(--pap);color:var(--bak)}
+.panel .grp{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.6;margin:12px 0 4px}
+.panel .list button .next{color:var(--lim);font-size:13px}
+#schoolProgress{margin:-4px 0 8px}
 .panel .back{margin-top:10px;font-size:12px;opacity:.7;padding:6px 0}
 .panel .back:hover{opacity:1;color:var(--lim)}
 .panel .tg button{font-size:15px}
@@ -123,6 +126,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <div class="list">
     <button id="continueBtn" style="display:none">продолжить партию<span class="time" id="continueInfo"></span></button>
     <button data-go="story">смена · сюжет</button>
+    <button data-go="trainer">тренер для начинашек<span class="time">подсказки, разбор зевков, можно вернуть ход</span></button>
     <button data-go="ai">против компа</button>
     <button data-go="hotset">вдвоём на одном экране</button>
     <button data-go="online">онлайн по ссылке</button>
@@ -140,6 +144,20 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
     <button data-lvl="1">продолжашка<span class="time">играет прилично, иногда тупит</span></button>
     <button data-lvl="2">кайфарик-про<span class="time">уже с разрядом</span></button>
     <button data-lvl="3">гроссорг<span class="time">полная сила, без пощады</span></button>
+  </div>
+  <button class="back" data-go="menu">← назад</button>
+</div>
+
+<div id="trainer" class="panel">
+  <h2>ТРЕНЕР</h2>
+  <p>школа с нуля: как ходят фигуры, шах и мат, вилки, связки и дебют. потом — партия, где тренер рядом.</p>
+  <div class="foot" id="schoolProgress"></div>
+  <div class="list" id="lessons"></div>
+  <div class="grp">партия с тренером</div>
+  <div class="list">
+    <button data-lvl="0">против начинашки<span class="time">для самого первого раза</span></button>
+    <button data-lvl="1">против продолжашки<span class="time">уже знаешь, как ходят фигуры</span></button>
+    <button data-lvl="2">против кайфарика-про<span class="time">хочешь, чтобы было трудно</span></button>
   </div>
   <button class="back" data-go="menu">← назад</button>
 </div>
@@ -176,7 +194,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <h2>НАСТРОЙКИ</h2>
   <div class="list tg">
     <button id="sGfx"></button><button id="sCrt"></button><button id="sSharp"></button>
-    <button id="sScenes"></button><button id="sCoach"></button><button id="sFlip"></button><button id="sMusic"></button><button id="sSfx"></button>
+    <button id="sScenes"></button><button id="sFlip"></button><button id="sMusic"></button><button id="sSfx"></button>
   </div>
   <button class="back" data-go="menu">← назад</button>
 </div>
@@ -216,10 +234,10 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 <div id="dialog"><div id="dWho"></div><div id="dText"></div></div>
 <div id="promo"><p>в кого превращаемся?</p><button data-p="q">ферзь</button><button data-p="r">ладья</button><button data-p="b">слон</button><button data-p="n">конь</button></div>
 
-<script src="chess.js?v=1795256270"></script>
-<script type="importmap">{"imports":{"three":"./three.module.min.js?v=1795256270"}}</script>
+<script src="chess.js?v=1795259174"></script>
+<script type="importmap">{"imports":{"three":"./three.module.min.js?v=1795259174"}}</script>
 <script type="module">
-  import './main.js?v=1795256270';
+  import './main.js?v=1795259174';
   document.fonts.ready.then(() => { const l = document.getElementById('load'); l.style.opacity = 0; setTimeout(() => l.remove(), 450); });
 </script>
 </body>

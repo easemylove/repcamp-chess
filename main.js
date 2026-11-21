@@ -1,11 +1,12 @@
 // Rep Camp Chess — партия, режимы, камера, сценки, интерфейс.
 import * as THREE from 'three';
-import { Retro, mat, C } from './gfx.js?v=1795256270';
-import { buildWorld, BT } from './world.js?v=1795256270';
-import { makePiece } from './figures.js?v=1795256270';
-import { initAudio, sfx, setMusic, setSfx } from './audio.js?v=1795256270';
-import * as AU from './audio.js?v=1795256270';
-import { CHAPTERS, preparePuzzle } from './story.js?v=1795256270';
+import { Retro, mat, C } from './gfx.js?v=1795259174';
+import { buildWorld, BT } from './world.js?v=1795259174';
+import { makePiece } from './figures.js?v=1795259174';
+import { initAudio, sfx, setMusic, setSfx } from './audio.js?v=1795259174';
+import * as AU from './audio.js?v=1795259174';
+import { CHAPTERS, preparePuzzle } from './story.js?v=1795259174';
+import { LESSONS } from './lessons.js?v=1795259174';
 
 const $ = s => document.querySelector(s);
 const Chess = window.Chess;
@@ -190,6 +191,15 @@ async function walk(f, to, opts = {}) {
 // ---------- сценки взятий ----------
 const WORDS = { p: ['ПЛЮХ', 'СНЕЖОК'], n: ['ИГОГО', 'ВЖУХ'], b: ['ДЗЫНЬ', 'ОП'], r: ['БАМ', 'ТЫДЫЩ'], q: ['ЧЕСС И КАЙФ', 'ВОТ ТАК'], k: ['ПОДУШКОЙ', 'ХРЯСЬ'] };
 const CRY = ['СЮДАА', 'С КАЙФОМ!'];   // фирменное: победа и взятие
+const CAP_ANY = ['СЮДАА', 'С КАЙФОМ!', 'СЮДААА!', 'ЗАБРАЛ', 'В БАНЮ!', 'НА ЗАРЯДКУ!', 'ХОП', 'ЛОВИ', 'ОПА', 'КАЙФ', 'ПРОЩАЙ', 'БАЦ', 'ЧИК', 'ВОТ ТАК ВОТ'];
+// фраза при взятии: не повторяется с последними восемью, своё слово фигуры — в приоритете
+let capRecent = [];
+function capWord(type) {
+  const own = (WORDS[type] || []).filter(w => !capRecent.includes(w)), any = CAP_ANY.filter(w => !capRecent.includes(w));
+  const w = own.length && Math.random() < .4 ? pickOne(own) : pickOne(any.length ? any : CAP_ANY.filter(x => x !== capRecent[capRecent.length - 1]));
+  capRecent.push(w); if (capRecent.length > 8) capRecent.shift();
+  return w;
+}
 const pickOne = a => a[(Math.random() * a.length) | 0];
 // записанные голосом Андрея фразы: положить mp3 в assets/voice/ и вписать имя сюда (sudaa, skaifom, chessikaif, oi)
 const VOICES = [];
@@ -211,7 +221,7 @@ async function captureScene(att, vic, toPos) {
   await turnTo(att, face(att, vp), .12);
   vic.posing = true; await turnTo(vic, face(vic, att.root.position), .15);
   const W = att.color === 'w'; const p = att.p;
-  pop(Math.random() < .45 ? pickOne(CRY) : pickOne(WORDS[att.type]), W ? C.malina : C.myata);
+  pop(capWord(att.type), W ? C.malina : C.myata);
   const head = () => vic.root.position.clone().add(V(0, .75 * vic.scale, 0));
   const fallBack = (ax = -1.45) => tween(.35, k => { vic.stand.rotation.x = ax * k; }, ease.in);
 
@@ -314,7 +324,7 @@ async function genericScene(v, att, vic, dir) {
 
 async function quickCapture(att, vic, toPos) {
   await walk(att, vic.root.position.clone().lerp(att.root.position, .45), { keepFacing: true });
-  vic.root.visible = false; burst(vic); pop(pickOne(CRY), att.color === 'w' ? C.malina : C.myata); await walk(att, toPos); toGrave(vic);
+  vic.root.visible = false; burst(vic); pop(capWord(att.type), att.color === 'w' ? C.malina : C.myata); await walk(att, toPos); toGrave(vic);
 }
 
 // ---------- ход ----------
@@ -335,7 +345,7 @@ async function doMove(mvIn) {
   const to = sqPos(mv.to);
   sfx('move');
   if (vic) {
-    const full = SET.scenes === true || SET.scenes === 'all' || (SET.scenes === 'some' && (fullShown < 4 || VAL[vic.type] >= 3 || mv.san.includes('+')));
+    const full = mode !== 'lesson' && (SET.scenes === true || SET.scenes === 'all' || (SET.scenes === 'some' && (fullShown < 4 || VAL[vic.type] >= 3 || mv.san.includes('+'))));
     if (full) fullShown++;
     inCut = full; if (full) await captureScene(f, vic, to); else await quickCapture(f, vic, to); inCut = false; skip = false;
   }
@@ -374,7 +384,7 @@ const SIDE = { w: 'лагерь', b: 'орги' };
 let engine, engCb;
 function eng() {
   if (engine) return engine;
-  engine = new Worker('stockfish.js?v=1795256270');
+  engine = new Worker('stockfish.js?v=1795259174');
   engine.onmessage = e => { const l = String(e.data); if (engCb && l.startsWith('bestmove')) { const c = engCb; engCb = null; c(l.split(/\s+/)[1]); } };
   engine.postMessage('uci'); engine.postMessage('isready');
   return engine;
@@ -402,6 +412,7 @@ async function aiTurn() {
 async function afterMove(mv) {
   if (ended) return;
   updHud();
+  if (mode === 'lesson') return lessonAfter(mv);
   if (mv._post && !game.game_over()) {
     busy = true; const r = await coachReview(mv); busy = false;
     if (r === 'undo') { game.undo(); rebuild(); updHud(); viewForTurn(); refreshHanging(); coachSay('вернули. подумай ещё раз — время есть'); return; }
@@ -413,6 +424,161 @@ async function afterMove(mv) {
   refreshHanging(); saveGame();
 }
 
+
+// ---------- школа тренера: уроки от правил до тактики ----------
+let lesson = null, drill = null; const starMeshes = new Map();
+const starGeo = new THREE.OctahedronGeometry(.3, 0), starMat = new THREE.MeshBasicMaterial({ color: C.limonad });
+const lessonsDone = () => { try { return new Set(JSON.parse(LS.get('rcLessons') || '[]')); } catch (_) { return new Set(); } };
+const HOW = {
+  r: 'ладья ходит по прямой: вверх, вниз, влево, вправо — на сколько угодно клеток, но не перепрыгивает',
+  b: 'слон ходит по диагонали на сколько угодно клеток и всегда остаётся на клетках своего цвета',
+  q: 'ферзь ходит как ладья и как слон вместе: по прямой и по диагонали',
+  n: 'конь ходит буквой «г»: две клетки в одну сторону и одну вбок. он единственный умеет перепрыгивать',
+  k: 'король ходит на одну клетку в любую сторону',
+  p: 'пешка идёт только вперёд на одну клетку, с начальной позиции можно на две. бьёт наискосок вперёд',
+};
+function clearStars() { for (const m of starMeshes.values()) scene.remove(m); starMeshes.clear(); }
+function renderTrainer() {
+  const done = lessonsDone(), box = $('#lessons'); box.innerHTML = '';
+  let group = '', firstOpen = LESSONS.findIndex(l => !done.has(l.id));
+  LESSONS.forEach((L, i) => {
+    if (L.group !== group) { group = L.group; const h = document.createElement('div'); h.className = 'grp'; h.textContent = group; box.appendChild(h); }
+    const b = document.createElement('button');
+    b.innerHTML = `${i + 1}. ${L.title}${done.has(L.id) ? ' <span class="ok">✓</span>' : i === firstOpen ? ' <span class="next">← дальше</span>' : ''}<span class="time">${L.tasks.length} ${L.tasks.length < 5 ? 'задания' : 'заданий'}</span>`;
+    b.onclick = () => { sfx('blip'); startLesson(i); };
+    box.appendChild(b);
+  });
+  $('#schoolProgress').textContent = `пройдено ${done.size} из ${LESSONS.length}`;
+}
+async function startLesson(li) {
+  const L = LESSONS[li]; if (!L) return;
+  startGame('lesson', { fen: '8/8/8/8/8/8/8/8 w - - 0 1' });
+  lesson = { li, L, ti: 0, active: false }; updHud();
+  await say(L.intro);
+  runTask(0);
+}
+function setBoard(fen) { game = new Chess(); game.load(fen); rebuild(); markLast(); }
+function runTask(ti) {
+  const T = lesson.L.tasks[ti]; lesson.ti = ti; lesson.T = T; lesson.hints = 0; drill = null; clearStars();
+  selected = null; selM.visible = false; showMoves([]); hintMove = null; hintM.visible = false;
+  if (T.kind === 'stars') {
+    const blockers = new Set(T.blockers || []);
+    const rows = []; for (let r = 7; r >= 0; r--) { let row = '', e = 0; for (let f = 0; f < 8; f++) { const sq = 'abcdefgh'[f] + (r + 1); const ch = sq === T.from ? T.piece.toUpperCase() : blockers.has(sq) ? 'p' : ''; if (ch) { if (e) row += e; e = 0; row += ch; } else e++; } if (e) row += e; rows.push(row); }
+    setBoard(rows.join('/') + ' w - - 0 1');
+    drill = { type: T.piece, sq: T.from, stars: new Set(T.stars), blockers };
+    for (const sq of T.stars) { const m = new THREE.Mesh(starGeo, starMat); m.position.copy(sqPos(sq)); m.position.y += .55; scene.add(m); starMeshes.set(sq, m); }
+  } else if (T.kind === 'puzzle') {
+    const pz = preparePuzzle(T.p, Chess); setBoard(pz.fen); lesson.seq = pz.solution; lesson.step = 0;
+  } else {
+    setBoard(T.fen); lesson.seq = T.kind === 'line' ? T.moves.slice() : null; lesson.step = 0;
+  }
+  setView('w'); lesson.active = true; updHud();
+  coachSay(T.text, 60000); status(T.text);
+  if (drill) { selected = drill.sq; selM.visible = true; selM.position.copy(sqPos(selected)); selM.position.y += .02; showMoves(drillMoves()); }
+}
+// упражнение «собери звёзды»: свои правила хода, без королей
+function drillMoves() {
+  const { type, sq, blockers } = drill; const f0 = sq.charCodeAt(0) - 97, r0 = +sq[1] - 1, out = [];
+  const name = (f, r) => 'abcdefgh'[f] + (r + 1), inb = (f, r) => f >= 0 && f < 8 && r >= 0 && r < 8;
+  const add = (f, r) => { if (!inb(f, r)) return false; const s = name(f, r); if (blockers.has(s)) { out.push({ to: s, flags: 'c', captured: 'p' }); return false; } out.push({ to: s, flags: 'n' }); return true; };
+  const slide = dirs => { for (const [df, dr] of dirs) for (let k = 1; k < 8; k++) if (!add(f0 + df * k, r0 + dr * k)) break; };
+  const R = [[1, 0], [-1, 0], [0, 1], [0, -1]], B = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+  if (type === 'r') slide(R); else if (type === 'b') slide(B); else if (type === 'q') slide(R.concat(B));
+  else if (type === 'n') for (const [df, dr] of [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]]) add(f0 + df, r0 + dr);
+  else if (type === 'k') for (const [df, dr] of R.concat(B)) add(f0 + df, r0 + dr);
+  else if (type === 'p') {
+    const free = (f, r) => inb(f, r) && !blockers.has(name(f, r));
+    if (free(f0, r0 + 1)) { out.push({ to: name(f0, r0 + 1), flags: 'n' }); if (r0 === 1 && free(f0, r0 + 2)) out.push({ to: name(f0, r0 + 2), flags: 'n' }); }
+    for (const df of [-1, 1]) if (inb(f0 + df, r0 + 1) && blockers.has(name(f0 + df, r0 + 1))) out.push({ to: name(f0 + df, r0 + 1), flags: 'c', captured: 'p' });
+  }
+  return out;
+}
+async function drillTap(sq) {
+  if (!sq) return;
+  const mv = drillMoves().find(m => m.to === sq);
+  if (sq === drill.sq) { selected = sq; selM.visible = true; selM.position.copy(sqPos(sq)); selM.position.y += .02; showMoves(drillMoves()); sfx('select'); return; }
+  if (!mv) { sfx('deny'); coachSay(HOW[drill.type] ? `так ${drill.type === 'p' ? 'пешка' : 'эта фигура'} не ходит. ${HOW[drill.type]}` : 'так не ходит', 5000); return; }
+  busy = true; selected = null; selM.visible = false; showMoves([]); hintMove = null; hintM.visible = false;
+  const from = drill.sq, f = figs[from]; delete figs[from];
+  if (drill.blockers.has(sq)) { const v = figs[sq]; delete figs[sq]; drill.blockers.delete(sq); if (v) { await walk(f, v.root.position.clone().lerp(f.root.position, .45), { keepFacing: true }); scene.remove(v.root); burst(v); } }
+  await walk(f, sqPos(sq)); f.sq = sq; figs[sq] = f;
+  game.remove(from); game.remove(sq); game.put({ type: drill.type, color: 'w' }, sq); drill.sq = sq;
+  if (drill.stars.has(sq)) { drill.stars.delete(sq); const m = starMeshes.get(sq); if (m) { stars(m.position.clone(), 12); scene.remove(m); starMeshes.delete(sq); } sfx('promo'); }
+  busy = false;
+  if (!drill.stars.size) return taskDone();
+  status(`${lesson.T.text} · осталось звёзд: ${drill.stars.size}`);
+  selected = sq; selM.visible = true; selM.position.copy(sqPos(sq)); selM.position.y += .02; showMoves(drillMoves());
+}
+function acceptOk(T, fen, m) {
+  const t = new Chess(fen); const r = t.move({ from: m.from, to: m.to, promotion: m.promotion || 'q' }); if (!r) return false;
+  const a = T.accept || {}, u = m.from + m.to;
+  if (a.uci) return a.uci.some(x => x.slice(0, 4) === u && (!x[4] || x[4] === (m.promotion || 'q')));
+  if (a.mate) return t.in_checkmate();
+  if (a.check) return t.in_check();
+  if (a.capture) return r.captured === a.capture;
+  if (a.castle) return /[kq]/.test(r.flags);
+  if (a.ep) return r.flags.includes('e');
+  if (a.promote) return r.promotion === a.promote;
+  if (a.legal) return true;
+  return false;
+}
+function seqOk(m) {
+  const want = lesson.seq[lesson.step]; if (!want) return false;
+  if (want.slice(0, 4) === m.from + m.to && (!want[4] || want[4] === (m.promotion || 'q'))) return true;
+  const t = new Chess(game.fen()); const r = t.move({ from: m.from, to: m.to, promotion: m.promotion || 'q' }); return !!(r && t.in_checkmate());
+}
+function lessonCheck(m) {
+  const T = lesson && lesson.T; if (!T) return false;
+  const ok = T.kind === 'move' ? acceptOk(T, game.fen(), m) : seqOk(m);
+  if (ok) { lesson.active = false; return true; }
+  sfx('deny'); selected = null; selM.visible = false; showMoves([]);
+  coachSay(pickOne(['не то. посмотри ещё раз', 'мимо. подумай, что тут главное', 'ход возможный, но задание другое']) + (T.hint ? '. застрял — жми «подсказка»' : ''), 5000);
+  return false;
+}
+async function lessonAfter(mv) {
+  if (!lesson || mv.color !== 'w') return;
+  const T = lesson.T;
+  if (T.kind === 'move' || game.in_checkmate()) return taskDone();
+  lesson.step++;
+  if (lesson.step >= lesson.seq.length) return taskDone();
+  const reply = lesson.seq[lesson.step]; lesson.step++;
+  await new Promise(r => setTimeout(r, 550));
+  await queueMove(uciObj(reply));
+  if (lesson.step >= lesson.seq.length) return taskDone();
+  lesson.active = true; coachSay('так, орги ответили. твой ход', 4000); status(T.text);
+}
+async function taskDone() {
+  if (!lesson) return; lesson.active = false; drill = null; updHud();
+  const T = lesson.T; sfx('win'); pop(capWord('q'), C.malina);
+  coachSay(T.ok || pickOne(['с кайфом! верно', 'сюдаа! так и надо', 'точно. идём дальше', 'красиво. следующее']), 3000);
+  await new Promise(r => setTimeout(r, 1700));
+  if (mode !== 'lesson') return;
+  if (lesson.ti + 1 < lesson.L.tasks.length) return runTask(lesson.ti + 1);
+  const done = lessonsDone(); done.add(lesson.L.id); LS.set('rcLessons', JSON.stringify([...done]));
+  coachHide(); clearStars();
+  await say(lesson.L.outro || [['тренер', 'урок пройден!']]);
+  const next = lesson.li + 1; lesson = null;
+  if (next < LESSONS.length) { const a = await coachAsk(`дальше: «${LESSONS[next].title}»`, ['следующий урок', 'к списку']); if (a === 0) return startLesson(next); }
+  toMenu(); show('trainer'); renderTrainer();
+}
+function lessonHint() {
+  if (!lesson || !lesson.active) return;
+  const T = lesson.T; lesson.hints++;
+  if (drill) {
+    // подсветить ход, который ближе всего ведёт к звезде
+    const moves = drillMoves(); const star = moves.find(m => drill.stars.has(m.to));
+    coachSay(HOW[drill.type] + (star ? '. одна звезда достаётся прямо сейчас' : ''), 7000);
+    if (star) { hintMove = { from: drill.sq, to: star.to }; hintM.visible = true; hintM.position.copy(sqPos(star.to)); hintM.position.y += .025; }
+    return;
+  }
+  let best = null;
+  if (lesson.seq) best = uciObj(lesson.seq[lesson.step]);
+  else if (T.accept && T.accept.uci) best = uciObj(T.accept.uci[0]);
+  else best = game.moves({ verbose: true }).find(m => acceptOk(T, game.fen(), m)) || null;
+  if (lesson.hints === 1 && T.hint) { coachSay(T.hint, 8000); if (best) { selected = best.from; selM.visible = true; selM.position.copy(sqPos(best.from)); selM.position.y += .02; showMoves(game.moves({ square: best.from, verbose: true })); } return; }
+  if (best) { hintMove = { from: best.from, to: best.to }; hintM.visible = true; hintM.position.copy(sqPos(best.to)); hintM.position.y += .025; coachSay(`вот ход: ${sanOf(game.fen(), best.from + best.to + (best.promotion || ''))}`, 6000); }
+}
+
 // ---------- тренер для начинашек ----------
 // Свой воркер Stockfish (не мешает ходам компа): оценка до и после хода, зевки, висящие фигуры, подсказка.
 let coachW = null, coachCb = null, coachChain = Promise.resolve(), hanging = [], hintCache = null;
@@ -421,7 +587,7 @@ const NAME_INS = { p: 'пешкой', n: 'конём', b: 'слоном', r: 'л
 const NAME = { p: 'пешка', n: 'конь', b: 'слон', r: 'ладья', q: 'ферзь', k: 'король' };
 function coachEng() {
   if (coachW) return coachW;
-  coachW = new Worker('stockfish.js?v=1795256270'); let last = { cp: 0, mate: null, pv: [] };
+  coachW = new Worker('stockfish.js?v=1795259174'); let last = { cp: 0, mate: null, pv: [] };
   coachW.onmessage = e => {
     const l = String(e.data);
     if (l.startsWith('info') && l.includes(' pv ') && !l.includes('bound')) { const mm = l.match(/ score (cp|mate) (-?\d+)/); if (mm) last = { cp: mm[1] === 'cp' ? +mm[2] : 0, mate: mm[1] === 'mate' ? +mm[2] : null, pv: l.split(' pv ')[1].trim().split(/\s+/) }; }
@@ -442,13 +608,9 @@ function analyse(fen, depth = 10) {
   const p = coachChain.then(job); coachChain = p.catch(() => {}); return p;
 }
 const wp = cp => 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * Math.max(-3000, Math.min(3000, cp)))) - 1);
-function coachFor(color) {
-  if (!SET.coach) return false;
-  if (mode === 'ai') return color === mySide;
-  if (mode === 'hot') return true;
-  if (mode === 'story') return !!(story && story.ch.kind === 'game' && color === 'w');
-  return false;
-}
+// тренер работает только в своём режиме «тренер»: в сюжете, против компа, вдвоём и онлайн — без подсказок и возвратов
+let trainer = false;
+function coachFor(color) { return trainer && mode === 'ai' && color === mySide; }
 const uciObj = u => ({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] || undefined });
 function sanOf(fen, u) { try { const t = new Chess(fen); const m = t.move(uciObj(u)); return m ? m.san : u; } catch (_) { return u; } }
 function reasonAfter(post, mover) {
@@ -531,6 +693,7 @@ function canTouch() {
   if (mode === 'hot') return true;
   if (mode === 'ai' || mode === 'online') return game.turn() === mySide;
   if (mode === 'story') return story && story.active && game.turn() === 'w';
+  if (mode === 'lesson') return !!(lesson && lesson.active && game.turn() === 'w');
   return false;
 }
 
@@ -609,6 +772,7 @@ function tap(x, y) {
 function tapSq(sq) {
   if (inCut) { skip = true; return; }
   if (!canTouch()) return;
+  if (mode === 'lesson' && drill) return drillTap(sq);
   if (!sq) { selected = null; showMoves([]); selM.visible = false; return; }
   if (selected) {
     const mv = game.moves({ square: selected, verbose: true }).filter(m => m.to === sq);
@@ -619,7 +783,7 @@ function tapSq(sq) {
     }
   }
   const pc = game.get(sq);
-  const mine = mode === 'hot' || mode === 'story' ? game.turn() : mySide;
+  const mine = mode === 'hot' || mode === 'story' || mode === 'lesson' ? game.turn() : mySide;
   if (pc && pc.color === game.turn() && pc.color === mine) {
     selected = sq; selM.visible = true; selM.position.copy(sqPos(sq)); selM.position.y += .02;
     showMoves(game.moves({ square: sq, verbose: true })); sfx('select');
@@ -628,6 +792,7 @@ function tapSq(sq) {
 }
 function humanMove(m) {
   if (mode === 'story' && story.check && !story.check(m)) return;
+  if (mode === 'lesson' && !lessonCheck(m)) return;
   if (mode === 'online' && conn) conn.send({ t: 'move', ...m, n: game.history().length, tm: clk ? clk[game.turn()] : null });
   return queueMove(m);
 }
@@ -659,8 +824,15 @@ function onTap(x, y) { if (mode === 'title') return; if ($('#dialog').classList.
 function status(t) { $('#status').textContent = t || ''; }
 function updHud() {
   const t = game.turn();
+  if (mode === 'lesson' && lesson) {
+    $('#turn').innerHTML = `урок: <b class="w">${lesson.L.title}</b>`;
+    $('#who').textContent = `задание ${lesson.ti + 1} из ${lesson.L.tasks.length}`; $('#lastMv').textContent = ''; $('#matInfo').textContent = '';
+    $('#undo').style.display = 'none'; $('#pDraw').style.display = $('#pResign').style.display = 'none';
+    $('#hintBtn').style.display = lesson.active ? '' : 'none'; $('#emo').classList.remove('on'); clockTxt = '';
+    return;
+  }
   $('#turn').innerHTML = `ход: <b class="${t}">${SIDE[t]}</b>`;
-  const who = mode === 'ai' ? `против: ${LEVELS[level].name}` : mode === 'hot' ? 'вдвоём' : mode === 'online' ? (conn ? 'онлайн' : 'онлайн · ждём') : mode === 'story' && story ? story.ch.title : '';
+  const who = mode === 'ai' ? `${trainer ? 'тренер · ' : ''}против: ${LEVELS[level].name}` : mode === 'hot' ? 'вдвоём' : mode === 'online' ? (conn ? 'онлайн' : 'онлайн · ждём') : mode === 'story' && story ? story.ch.title : '';
   $('#who').textContent = who;
   status(game.in_check() ? 'шах!' : '');
   $('#undo').style.display = mode === 'ai' || mode === 'hot' ? '' : 'none';
@@ -719,14 +891,14 @@ async function offerDraw() {
 }
 // ---------- сохранение партии ----------
 const SAVE_KEY = 'rcSave';
-function saveGame() { if (!(mode === 'ai' || mode === 'hot') || ended) return; LS.set(SAVE_KEY, JSON.stringify({ mode, pgn: game.pgn(), mySide, level, clk })); }
+function saveGame() { if (!(mode === 'ai' || mode === 'hot') || ended) return; LS.set(SAVE_KEY, JSON.stringify({ mode, pgn: game.pgn(), mySide, level, clk, trainer })); }
 function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch (_) {} }
 function loadSave() { try { const x = JSON.parse(LS.get(SAVE_KEY) || 'null'); return x && x.pgn !== undefined ? x : null; } catch (_) { return null; } }
 function renderContinue() {
   const sv = loadSave(), b = $('#continueBtn'); if (!sv) { b.style.display = 'none'; return; }
   const c = new Chess(); if (sv.pgn) c.load_pgn(sv.pgn); const n = c.history().length;
   if (!n) { b.style.display = 'none'; return; }
-  b.style.display = ''; $('#continueInfo').textContent = (sv.mode === 'ai' ? `против: ${LEVELS[sv.level].name}` : 'вдвоём') + ` · ход ${Math.ceil(n / 2)}`;
+  b.style.display = ''; $('#continueInfo').textContent = (sv.mode === 'ai' ? `${sv.trainer ? 'тренер · ' : ''}против: ${LEVELS[sv.level].name}` : 'вдвоём') + ` · ход ${Math.ceil(n / 2)}`;
 }
 function pauseOpen() {
   if (mode === 'title') return;
@@ -743,7 +915,7 @@ function showEnd(title, sub) { $('#endT').textContent = title; $('#endS').textCo
 function startGame(m, opts = {}) {
   mode = m; auto = false; hideAll(); $('#hud').classList.add('on'); $('#title').classList.remove('on');
   game = new Chess(opts.fen); if (opts.pgn) game.load_pgn(opts.pgn); rebuild(); world.dark = opts.dark || 0;
-  ended = false; fullShown = 0; clk = opts.clk ? { ...opts.clk } : makeClock(opts.tc); clockTxt = '';
+  trainer = !!opts.trainer && m === 'ai'; ended = false; fullShown = 0; if (m !== 'lesson') { lesson = null; drill = null; clearStars(); } clk = opts.clk ? { ...opts.clk } : makeClock(opts.tc); clockTxt = '';
   if (AU.setTrack) AU.setTrack(opts.dark ? 'night' : 'game');
   if (m === 'ai') { mySide = opts.side || 'w'; level = opts.level ?? level; }
   Object.assign(goal, { tx: 0, ty: .2, tz: .4 });
@@ -751,13 +923,15 @@ function startGame(m, opts = {}) {
   hintMove = null; hintM.visible = false; hanging = []; hintCache = null; coachHide();
   updHud();
   if (m === 'ai' && game.turn() !== mySide) setTimeout(aiTurn, 600);
-  if ((m === 'ai' || m === 'hot') && !SET.tutDone) { SET.tutDone = true; saveSet(); setTimeout(() => say(TUTOR.concat(SET.coach ? [TUTOR_COACH] : [])), 700); }
+  if ((m === 'ai' || m === 'hot') && !SET.tutDone) { SET.tutDone = true; saveSet(); setTimeout(() => say(TUTOR.concat(trainer ? [TUTOR_COACH] : [])), 700); }
+  else if (trainer && !SET.coachSeen) { SET.coachSeen = true; saveSet(); setTimeout(() => say([TUTOR_COACH]), 700); }
   saveGame();
 }
 const TUTOR = [['тренер', 'привет! тапни свою фигуру — она подпрыгнет, а клетки, куда можно пойти, загорятся'], ['тренер', 'потом тапни нужную клетку. ходить можно и по схеме внизу, так даже точнее'], ['тренер', 'доску крути пальцем, «вид» меняет ракурс. в «паузе» — список ходов, ничья, сдаться и настройки']];
-const TUTOR_COACH = ['тренер', 'если зевнёшь фигуру, я скажу и дам вернуть ход. «подсказка» покажет хороший ход. выключить меня можно в настройках'];
+const TUTOR_COACH = ['тренер', 'я рядом всю партию. зевнёшь фигуру — скажу и дам вернуть ход, «!» на схеме — фигура висит, «подсказка» покажет хороший ход'];
 let fullShown = 0;
 function toMenu() {
+  if (typeof clearStars === 'function') { lesson = null; drill = null; clearStars(); }
   mode = 'title'; auto = true; chain = Promise.resolve(); busy = false; inCut = false; skip = false; cine.k = 0; story = null;
   Object.assign(goal, { ph: .32, dist: 15, ty: 1 }); top = false;
   $('#hud').classList.remove('on'); $('#dialog').classList.remove('on'); coachHide(); show('menu'); renderContinue();
@@ -766,10 +940,11 @@ function toMenu() {
 
 // меню
 const bind = (sel, fn) => $(sel).addEventListener('click', e => { e.stopPropagation(); sfx('blip'); fn(e); });
-document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { sfx('blip'); const go = b.dataset.go === 'menu' && mode !== 'title' ? 'pause' : b.dataset.go; if (go === 'pause') return pauseOpen(); show(go); if (go === 'story') renderStory(); }));
+document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { sfx('blip'); const go = b.dataset.go === 'menu' && mode !== 'title' ? 'pause' : b.dataset.go; if (go === 'pause') return pauseOpen(); show(go); if (go === 'story') renderStory(); if (go === 'trainer') renderTrainer(); }));
 document.querySelectorAll('.row.tc button').forEach(b => b.addEventListener('click', () => { sfx('blip'); b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('sel', x === b)); }));
 const tcOf = panel => { const b = $(`#${panel} .row.tc .sel`); return b ? b.dataset.tc : 'none'; };
-document.querySelectorAll('[data-lvl]').forEach(b => b.addEventListener('click', () => { sfx('blip'); level = +b.dataset.lvl; startGame('ai', { level, side: $('#sideB').classList.contains('sel') ? 'b' : 'w', tc: tcOf('ai') }); }));
+document.querySelectorAll('#ai [data-lvl]').forEach(b => b.addEventListener('click', () => { sfx('blip'); level = +b.dataset.lvl; startGame('ai', { level, side: $('#sideB').classList.contains('sel') ? 'b' : 'w', tc: tcOf('ai') }); }));
+document.querySelectorAll('#trainer [data-lvl]').forEach(b => b.addEventListener('click', () => { sfx('blip'); level = +b.dataset.lvl; startGame('ai', { level, side: 'w', tc: 'none', trainer: true }); }));
 bind('#sideW', () => { $('#sideW').classList.add('sel'); $('#sideB').classList.remove('sel'); });
 bind('#sideB', () => { $('#sideB').classList.add('sel'); $('#sideW').classList.remove('sel'); });
 bind('#hot', () => startGame('hot', { tc: tcOf('hotset') }));
@@ -780,13 +955,13 @@ bind('#pTop', () => { hideAll(); top ? setView(mode === 'hot' ? game.turn() : my
 bind('#pMini', () => { SET.mini = !SET.mini; saveSet(); pauseOpen(); });
 bind('#pResign', () => resign());
 bind('#pDraw', () => offerDraw());
-bind('#continueBtn', () => { const sv = loadSave(); if (!sv) return; startGame(sv.mode, { level: sv.level, side: sv.mySide, pgn: sv.pgn, clk: sv.clk }); if (sv.mode === 'ai' && game.turn() !== mySide && !game.game_over()) setTimeout(aiTurn, 600); });
+bind('#continueBtn', () => { const sv = loadSave(); if (!sv) return; startGame(sv.mode, { level: sv.level, side: sv.mySide, pgn: sv.pgn, clk: sv.clk, trainer: sv.trainer }); if (sv.mode === 'ai' && game.turn() !== mySide && !game.game_over()) setTimeout(aiTurn, 600); });
 const EMO = { sudaa: 'СЮДАА', skaifom: 'С КАЙФОМ!', oi: 'ОЙ', gg: 'GG' }; let emoT = 0;
 document.querySelectorAll('#emo button').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); if (performance.now() - emoT < 1500 || !conn) return; emoT = performance.now(); conn.send({ t: 'emo', e: b.dataset.e }); pop(EMO[b.dataset.e], C.limonad); }));
 bind('#viewBtn', () => { const seq = ['w', 'side', 'b', 'side']; viewI = (viewI + 1) % 4; setView(seq[viewI]); });
 bind('#undo', () => { hideAll(); if (busy || ended) return; if (mode === 'ai') { game.undo(); if (game.turn() !== mySide) game.undo(); } else game.undo(); hintMove = null; hintM.visible = false; coachHide(); rebuild(); updHud(); viewForTurn(); refreshHanging(); });
-bind('#hintBtn', () => giveHint());
-bind('#again', () => { const tc = clk ? clk.tc : 'none'; if (mode === 'online') { conn && conn.send({ t: 'again', tc }); startGame('online', { tc }); return; } startGame(mode, { level, side: mySide, tc }); });
+bind('#hintBtn', () => mode === 'lesson' ? lessonHint() : giveHint());
+bind('#again', () => { const tc = clk ? clk.tc : 'none'; if (mode === 'online') { conn && conn.send({ t: 'again', tc }); startGame('online', { tc }); return; } startGame(mode, { level, side: mySide, tc, trainer }); });
 bind('#endMenu', () => toMenu());
 let viewI = 0;
 
@@ -797,7 +972,6 @@ function renderSet() {
   t('#sCrt', SET.crt, 'старый телевизор: ' + (SET.crt ? 'да' : 'нет'));
   t('#sSharp', true, 'пиксели: ' + (SET.sharp === 240 ? 'крупные' : 'помельче'));
   t('#sScenes', SET.scenes, 'сценки взятий: ' + (SET.scenes ? 'да' : 'нет'));
-  t('#sCoach', SET.coach, 'тренер для начинашек: ' + (SET.coach ? 'да' : 'нет'));
   t('#sFlip', SET.flip, 'вдвоём доска поворачивается: ' + (SET.flip ? 'да' : 'нет'));
   t('#sMusic', SET.music, 'музыка: ' + (SET.music ? 'да' : 'нет'));
   t('#sSfx', SET.sfx, 'звуки: ' + (SET.sfx ? 'да' : 'нет'));
@@ -808,7 +982,6 @@ tog('#sCrt', () => SET.crt = !SET.crt);
 tog('#sSharp', () => SET.sharp = SET.sharp === 240 ? 360 : 240);
 tog('#sScenes', () => SET.scenes = !SET.scenes);
 tog('#sFlip', () => SET.flip = !SET.flip);
-tog('#sCoach', () => SET.coach = !SET.coach);
 tog('#sMusic', () => SET.music = !SET.music);
 tog('#sSfx', () => SET.sfx = !SET.sfx);
 renderSet();
@@ -1014,6 +1187,7 @@ function drawMaterial(bottomColor) {
   const m = material(), top = bottomColor === 'w' ? 'b' : 'w';
   const key = JSON.stringify(m) + bottomColor; if (key === matKey) return; matKey = key;
   const row = (el, c) => { const x = m[c]; el.innerHTML = `<span class="who">${SIDE[c]}</span>` + x.list.map(k => `<img src="${PIECE_URL[k]}" alt="">`).join('') + (x.score > 0 ? `<b>+${x.score}</b>` : ''); };
+  if (mode === 'lesson') { $('#matTop').innerHTML = $('#matBot').innerHTML = ''; $('#matInfo').textContent = ''; return; }
   row($('#matTop'), top); row($('#matBot'), bottomColor);
   const lead = m.w.score > 0 ? `материал: лагерь +${m.w.score}` : m.b.score > 0 ? `материал: орги +${m.b.score}` : 'материал: поровну';
   $('#matInfo').textContent = lead;
@@ -1032,6 +1206,7 @@ function drawMini(t) {
   if (l) { mg.fillStyle = 'rgba(255,230,107,.75)'; for (const sq of [l.from, l.to]) { const [x, y] = cell(sq); mg.fillRect(x, y, S, S); } }
   const frameSq = (sq, col, w = 5) => { const [x, y] = cell(sq); mg.strokeStyle = col; mg.lineWidth = w; mg.strokeRect(x + w / 2, y + w / 2, S - w, S - w); };
   if (game.in_check()) { const b = game.board(); for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) { const p = b[r][f]; if (p && p.type === 'k' && p.color === game.turn()) { const [x, y] = cell('abcdefgh'[f] + (8 - r)); const g = mg.createRadialGradient(x + S / 2, y + S / 2, 2, x + S / 2, y + S / 2, S * .7); g.addColorStop(0, 'rgba(255,0,40,.95)'); g.addColorStop(1, 'rgba(255,0,40,0)'); mg.fillStyle = g; mg.fillRect(x, y, S, S); } } }
+  if (mode === 'lesson' && drill) for (const sq of drill.stars) { const [x, y] = cell(sq); mg.fillStyle = C.limonad; mg.strokeStyle = C.bak; mg.lineWidth = 3; mg.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? S * .16 : S * .36; mg.lineTo(x + S / 2 + Math.cos(a) * rr, y + S / 2 + Math.sin(a) * rr); } mg.closePath(); mg.fill(); mg.stroke(); }
   if (selected) frameSq(selected, C.myata);
   // висящие фигуры (тренер)
   for (const sq of hanging) { const [x, y] = cell(sq); mg.fillStyle = C.bak; mg.beginPath(); mg.arc(x + S - 11, y + 11, 9, 0, 7); mg.fill(); mg.fillStyle = C.limonad; mg.font = 'bold 14px "IBM Plex Mono", monospace'; mg.textAlign = 'center'; mg.textBaseline = 'middle'; mg.fillText('!', x + S - 11, y + 12); }
@@ -1067,7 +1242,7 @@ mc.addEventListener('pointerdown', e => {
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now; const t = now / 1000;
-  updTweens(dt); tickClock(dt);
+  updTweens(dt); tickClock(dt); for (const m of starMeshes.values()) { m.rotation.y += dt * 2.2; m.position.y = BT + .55 + Math.sin(t * 3 + m.position.x) * .08; }
   for (const f of Object.values(figs)) f.update(t, dt);
   for (const f of grave) f.update(t, dt);
   for (const f of spectators) f.update(t, dt);
@@ -1080,4 +1255,5 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-window.__rc = { get game() { return game; }, figs: () => figs, startGame, setView, queueMove, SET, applySet, retro, cam, world, startChapter, toMenu, humanMove, pick, tap, story: () => story, dbg: () => ({ mode, busy, inCut, mySide, turn: game.turn(), selected, cine: cine.k, ptrs: ptrs.size }) };
+window.__drillMoves = () => drillMoves(); window.__acceptOk = acceptOk;
+window.__rc = { capWord, startLesson, lessonHint, get lesson() { return lesson; }, get drill() { return drill; }, drillTap, SET, get game() { return game; }, figs: () => figs, startGame, setView, queueMove, SET, applySet, retro, cam, world, startChapter, toMenu, humanMove, pick, tap, story: () => story, dbg: () => ({ mode, busy, inCut, mySide, turn: game.turn(), selected, cine: cine.k, ptrs: ptrs.size }) };
