@@ -69,7 +69,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 #mini canvas{display:block;width:min(30vh,220px);height:min(30vh,220px);cursor:pointer}
 #mini .mat{height:18px;display:flex;align-items:center;gap:1px;font-size:10px;line-height:1;padding:0 2px;white-space:nowrap;overflow:hidden}
 #mini .mat .who{opacity:.65;margin-right:5px}
-#mini .mat img{width:15px;height:15px;margin-right:-4px}
+#mini .mat img{width:16px;height:16px;margin-right:-3px;image-rendering:pixelated}
 #mini .mat b{margin-left:8px;color:var(--lim);font-weight:600}
 #matInfo,#lastMv{opacity:.75}
 #clock{font-family:"IBM Plex Mono";font-weight:600;font-size:13px;display:flex;gap:8px}#clock:empty{display:none}
@@ -234,10 +234,10 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 <div id="dialog"><div id="dWho"></div><div id="dText"></div></div>
 <div id="promo"><p>в кого превращаемся?</p><button data-p="q">ферзь</button><button data-p="r">ладья</button><button data-p="b">слон</button><button data-p="n">конь</button></div>
 
-<script src="chess.js?v=1795259174"></script>
-<script type="importmap">{"imports":{"three":"./three.module.min.js?v=1795259174"}}</script>
+<script src="chess.js?v=1795260048"></script>
+<script type="importmap">{"imports":{"three":"./three.module.min.js?v=1795260048"}}</script>
 <script type="module">
-  import './main.js?v=1795259174';
+  import './main.js?v=1795260048';
   document.fonts.ready.then(() => { const l = document.getElementById('load'); l.style.opacity = 0; setTimeout(() => l.remove(), 450); });
 </script>
 </body>

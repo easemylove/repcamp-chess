@@ -1,12 +1,12 @@
 // Rep Camp Chess — партия, режимы, камера, сценки, интерфейс.
 import * as THREE from 'three';
-import { Retro, mat, C } from './gfx.js?v=1795259174';
-import { buildWorld, BT } from './world.js?v=1795259174';
-import { makePiece } from './figures.js?v=1795259174';
-import { initAudio, sfx, setMusic, setSfx } from './audio.js?v=1795259174';
-import * as AU from './audio.js?v=1795259174';
-import { CHAPTERS, preparePuzzle } from './story.js?v=1795259174';
-import { LESSONS } from './lessons.js?v=1795259174';
+import { Retro, mat, C } from './gfx.js?v=1795260048';
+import { buildWorld, BT } from './world.js?v=1795260048';
+import { makePiece } from './figures.js?v=1795260048';
+import { initAudio, sfx, setMusic, setSfx } from './audio.js?v=1795260048';
+import * as AU from './audio.js?v=1795260048';
+import { CHAPTERS, preparePuzzle } from './story.js?v=1795260048';
+import { LESSONS } from './lessons.js?v=1795260048';
 
 const $ = s => document.querySelector(s);
 const Chess = window.Chess;
@@ -194,7 +194,12 @@ const CRY = ['СЮДАА', 'С КАЙФОМ!'];   // фирменное: поб�
 const CAP_ANY = ['СЮДАА', 'С КАЙФОМ!', 'СЮДААА!', 'ЗАБРАЛ', 'В БАНЮ!', 'НА ЗАРЯДКУ!', 'ХОП', 'ЛОВИ', 'ОПА', 'КАЙФ', 'ПРОЩАЙ', 'БАЦ', 'ЧИК', 'ВОТ ТАК ВОТ'];
 // фраза при взятии: не повторяется с последними восемью, своё слово фигуры — в приоритете
 let capRecent = [];
+// в тренере — спокойные слова тренера вместо вскриков
+const CAP_COACH = ['МОЛОДЕЦ', 'ПРАВИЛЬНО', 'ВЕРНО', 'ТОЧНО', 'ХОРОШО', 'ОТЛИЧНО', 'ТАК И НАДО', 'ГРАМОТНО', 'ЧИСТО', 'УМНИЦА', 'ЗАСЧИТАНО', 'В ТОЧКУ'];
+let coachRecent = [];
+function coachWord() { const pool = CAP_COACH.filter(w => !coachRecent.includes(w)); const w = pickOne(pool); coachRecent.push(w); if (coachRecent.length > 6) coachRecent.shift(); return w; }
 function capWord(type) {
+  if (mode === 'lesson' || trainer) return coachWord();
   const own = (WORDS[type] || []).filter(w => !capRecent.includes(w)), any = CAP_ANY.filter(w => !capRecent.includes(w));
   const w = own.length && Math.random() < .4 ? pickOne(own) : pickOne(any.length ? any : CAP_ANY.filter(x => x !== capRecent[capRecent.length - 1]));
   capRecent.push(w); if (capRecent.length > 8) capRecent.shift();
@@ -345,7 +350,7 @@ async function doMove(mvIn) {
   const to = sqPos(mv.to);
   sfx('move');
   if (vic) {
-    const full = mode !== 'lesson' && (SET.scenes === true || SET.scenes === 'all' || (SET.scenes === 'some' && (fullShown < 4 || VAL[vic.type] >= 3 || mv.san.includes('+'))));
+    const full = (SET.scenes === true || SET.scenes === 'all' || (SET.scenes === 'some' && (fullShown < 4 || VAL[vic.type] >= 3 || mv.san.includes('+'))));
     if (full) fullShown++;
     inCut = full; if (full) await captureScene(f, vic, to); else await quickCapture(f, vic, to); inCut = false; skip = false;
   }
@@ -384,7 +389,7 @@ const SIDE = { w: 'лагерь', b: 'орги' };
 let engine, engCb;
 function eng() {
   if (engine) return engine;
-  engine = new Worker('stockfish.js?v=1795259174');
+  engine = new Worker('stockfish.js?v=1795260048');
   engine.onmessage = e => { const l = String(e.data); if (engCb && l.startsWith('bestmove')) { const c = engCb; engCb = null; c(l.split(/\s+/)[1]); } };
   engine.postMessage('uci'); engine.postMessage('isready');
   return engine;
@@ -416,7 +421,7 @@ async function afterMove(mv) {
   if (mv._post && !game.game_over()) {
     busy = true; const r = await coachReview(mv); busy = false;
     if (r === 'undo') { game.undo(); rebuild(); updHud(); viewForTurn(); refreshHanging(); coachSay('вернули. подумай ещё раз — время есть'); return; }
-  } else if (mv._post && game.in_checkmate()) coachSay('мат! сюдаа!');
+  } else if (mv._post && game.in_checkmate()) coachSay('мат! молодец');
   if (game.game_over()) return endGame();
   if (mode === 'ai' && game.turn() !== mySide) aiTurn();
   if (mode === 'hot') viewForTurn();
@@ -500,8 +505,16 @@ async function drillTap(sq) {
   if (!mv) { sfx('deny'); coachSay(HOW[drill.type] ? `так ${drill.type === 'p' ? 'пешка' : 'эта фигура'} не ходит. ${HOW[drill.type]}` : 'так не ходит', 5000); return; }
   busy = true; selected = null; selM.visible = false; showMoves([]); hintMove = null; hintM.visible = false;
   const from = drill.sq, f = figs[from]; delete figs[from];
-  if (drill.blockers.has(sq)) { const v = figs[sq]; delete figs[sq]; drill.blockers.delete(sq); if (v) { await walk(f, v.root.position.clone().lerp(f.root.position, .45), { keepFacing: true }); scene.remove(v.root); burst(v); } }
-  await walk(f, sqPos(sq)); f.sq = sq; figs[sq] = f;
+  let walked = false;
+  if (drill.blockers.has(sq)) {
+    const v = figs[sq]; delete figs[sq]; drill.blockers.delete(sq);
+    if (v) {
+      const full = SET.scenes === true || SET.scenes === 'all' || (SET.scenes === 'some' && fullShown < 4);
+      if (full) { fullShown++; inCut = true; await captureScene(f, v, sqPos(sq)); inCut = false; skip = false; walked = true; }
+      else { await quickCapture(f, v, sqPos(sq)); walked = true; }
+    }
+  }
+  if (!walked) await walk(f, sqPos(sq)); f.sq = sq; figs[sq] = f;
   game.remove(from); game.remove(sq); game.put({ type: drill.type, color: 'w' }, sq); drill.sq = sq;
   if (drill.stars.has(sq)) { drill.stars.delete(sq); const m = starMeshes.get(sq); if (m) { stars(m.position.clone(), 12); scene.remove(m); starMeshes.delete(sq); } sfx('promo'); }
   busy = false;
@@ -550,7 +563,7 @@ async function lessonAfter(mv) {
 async function taskDone() {
   if (!lesson) return; lesson.active = false; drill = null; updHud();
   const T = lesson.T; sfx('win'); pop(capWord('q'), C.malina);
-  coachSay(T.ok || pickOne(['с кайфом! верно', 'сюдаа! так и надо', 'точно. идём дальше', 'красиво. следующее']), 3000);
+  coachSay(T.ok || pickOne(['молодец, верно', 'правильно. идём дальше', 'точно. следующее', 'хорошо получилось']), 3000);
   await new Promise(r => setTimeout(r, 1700));
   if (mode !== 'lesson') return;
   if (lesson.ti + 1 < lesson.L.tasks.length) return runTask(lesson.ti + 1);
@@ -587,7 +600,7 @@ const NAME_INS = { p: 'пешкой', n: 'конём', b: 'слоном', r: 'л
 const NAME = { p: 'пешка', n: 'конь', b: 'слон', r: 'ладья', q: 'ферзь', k: 'король' };
 function coachEng() {
   if (coachW) return coachW;
-  coachW = new Worker('stockfish.js?v=1795259174'); let last = { cp: 0, mate: null, pv: [] };
+  coachW = new Worker('stockfish.js?v=1795260048'); let last = { cp: 0, mate: null, pv: [] };
   coachW.onmessage = e => {
     const l = String(e.data);
     if (l.startsWith('info') && l.includes(' pv ') && !l.includes('bound')) { const mm = l.match(/ score (cp|mate) (-?\d+)/); if (mm) last = { cp: mm[1] === 'cp' ? +mm[2] : 0, mate: mm[1] === 'mate' ? +mm[2] : null, pv: l.split(' pv ')[1].trim().split(/\s+/) }; }
@@ -635,8 +648,8 @@ async function coachReview(mv) {
     return ans === 0 ? 'undo' : 'go';
   }
   if (loss >= 12 && !isBest && !opening) coachSay(`${who}${mv.san} — так себе. ${reasonAfter(post, mv.color)}${bestSan ? ` сильнее было ${bestSan}.` : ''}`, 6500);
-  else if (isBest && (mv.captured || mv.san.includes('+') || Math.random() < .3)) coachSay(pickOne(['с кайфом! лучший ход', 'сюдаа! это ход движка', 'с кайфом! так и надо', 'чесс и кайф. сильнее не найти']), 3500);
-  else if (loss < 3 && mv.captured && Math.random() < .5) coachSay(pickOne(['с кайфом!', 'сюдаа!']), 2500);
+  else if (isBest && (mv.captured || mv.san.includes('+') || Math.random() < .3)) coachSay(pickOne(['молодец, это лучший ход', 'правильно, сильнее тут не найти', 'точно. так бы сыграл и движок', 'отлично, так и надо']), 3500);
+  else if (loss < 3 && mv.captured && Math.random() < .5) coachSay(pickOne(['хорошее взятие', 'правильно, бери', 'верно, забрал']), 2500);
   return 'go';
 }
 // фигуры, которые сейчас висят у того, кто ходит: под боем и без защиты (или бьёт кто-то дешевле)
@@ -1155,12 +1168,18 @@ rebuild();
 
 
 // ---------- схема доски (2D, в углу) ----------
-// фигуры lichess (cburnett, Colin M.L. Burnett, GPLv2+)
-const PIECE_URL = {
-  wp: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxwYXRoIGZpbGw9IiNmZmYiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2Utd2lkdGg9IjEuNSIgZD0iTTIyLjUgOWMtMi4yMSAwLTQgMS43OS00IDQgMCAuODkuMjkgMS43MS43OCAyLjM4QzE3LjMzIDE2LjUgMTYgMTguNTkgMTYgMjFjMCAyLjAzLjk0IDMuODQgMi40MSA1LjAzLTMgMS4wNi03LjQxIDUuNTUtNy40MSAxMy40N2gyM2MwLTcuOTItNC40MS0xMi40MS03LjQxLTEzLjQ3IDEuNDctMS4xOSAyLjQxLTMgMi40MS01LjAzIDAtMi40MS0xLjMzLTQuNS0zLjI4LTUuNjIuNDktLjY3Ljc4LTEuNDkuNzgtMi4zOCAwLTIuMjEtMS43OS00LTQtNHoiLz48L3N2Zz4=', wn: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGw9Im5vbmUiIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48cGF0aCBmaWxsPSIjZmZmIiBkPSJNMjIgMTBjMTAuNSAxIDE2LjUgOCAxNiAyOUgxNWMwLTkgMTAtNi41IDgtMjEiLz48cGF0aCBmaWxsPSIjZmZmIiBkPSJNMjQgMThjLjM4IDIuOTEtNS41NSA3LjM3LTggOS0zIDItMi44MiA0LjM0LTUgNC0xLjA0Mi0uOTQgMS40MS0zLjA0IDAtMy0xIDAgLjE5IDEuMjMtMSAyLTEgMC00LjAwMyAxLTQtNCAwLTIgNi0xMiA2LTEyczEuODktMS45IDItMy41Yy0uNzMtLjk5NC0uNS0yLS41LTMgMS0xIDMgMi41IDMgMi41aDJzLjc4LTEuOTkyIDIuNS0zYzEgMCAxIDMgMSAzIi8+PHBhdGggZmlsbD0iIzAwMCIgZD0iTTkuNSAyNS41YS41LjUgMCAxIDEtMSAwIC41LjUgMCAxIDEgMSAwbTUuNDMzLTkuNzVhLjUgMS41IDMwIDEgMS0uODY2LS41LjUgMS41IDMwIDEgMSAuODY2LjUiLz48L2c+PC9zdmc+', wb: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGw9Im5vbmUiIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48ZyBmaWxsPSIjZmZmIiBzdHJva2UtbGluZWNhcD0iYnV0dCI+PHBhdGggZD0iTTkgMzZjMy4zOS0uOTcgMTAuMTEuNDMgMTMuNS0yIDMuMzkgMi40MyAxMC4xMSAxLjAzIDEzLjUgMiAwIDAgMS42NS41NCAzIDItLjY4Ljk3LTEuNjUuOTktMyAuNS0zLjM5LS45Ny0xMC4xMS40Ni0xMy41LTEtMy4zOSAxLjQ2LTEwLjExLjAzLTEzLjUgMS0xLjM1LjQ5LTIuMzIuNDctMy0uNSAxLjM1LTEuOTQgMy0yIDMtMnoiLz48cGF0aCBkPSJNMTUgMzJjMi41IDIuNSAxMi41IDIuNSAxNSAwIC41LTEuNSAwLTIgMC0yIDAtMi41LTIuNS00LTIuNS00IDUuNS0xLjUgNi0xMS41LTUtMTUuNS0xMSA0LTEwLjUgMTQtNSAxNS41IDAgMC0yLjUgMS41LTIuNSA0IDAgMC0uNS41IDAgMnoiLz48cGF0aCBkPSJNMjUgOGEyLjUgMi41IDAgMSAxLTUgMCAyLjUgMi41IDAgMSAxIDUgMHoiLz48L2c+PHBhdGggc3Ryb2tlLWxpbmVqb2luPSJtaXRlciIgZD0iTTE3LjUgMjZoMTBNMTUgMzBoMTVtLTcuNS0xNC41djVNMjAgMThoNSIvPjwvZz48L3N2Zz4=', wr: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGw9IiNmZmYiIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48cGF0aCBzdHJva2UtbGluZWNhcD0iYnV0dCIgZD0iTTkgMzloMjd2LTNIOXptMy0zdi00aDIxdjR6bS0xLTIyVjloNHYyaDVWOWg1djJoNVY5aDR2NSIvPjxwYXRoIGQ9Im0zNCAxNC0zIDNIMTRsLTMtMyIvPjxwYXRoIHN0cm9rZS1saW5lY2FwPSJidXR0IiBzdHJva2UtbGluZWpvaW49Im1pdGVyIiBkPSJNMzEgMTd2MTIuNUgxNFYxNyIvPjxwYXRoIGQ9Im0zMSAyOS41IDEuNSAyLjVoLTIwbDEuNS0yLjUiLz48cGF0aCBmaWxsPSJub25lIiBzdHJva2UtbGluZWpvaW49Im1pdGVyIiBkPSJNMTEgMTRoMjMiLz48L2c+PC9zdmc+', wq: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGw9IiNmZmYiIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48cGF0aCBkPSJNOCAxMmEyIDIgMCAxIDEtNCAwIDIgMiAwIDEgMSA0IDBtMTYuNS00LjVhMiAyIDAgMSAxLTQgMCAyIDIgMCAxIDEgNCAwTTQxIDEyYTIgMiAwIDEgMS00IDAgMiAyIDAgMSAxIDQgME0xNiA4LjVhMiAyIDAgMSAxLTQgMCAyIDIgMCAxIDEgNCAwTTMzIDlhMiAyIDAgMSAxLTQgMCAyIDIgMCAxIDEgNCAwIi8+PHBhdGggc3Ryb2tlLWxpbmVjYXA9ImJ1dHQiIGQ9Ik05IDI2YzguNS0xLjUgMjEtMS41IDI3IDBsMi0xMi03IDExVjExbC01LjUgMTMuNS0zLTE1LTMgMTUtNS41LTE0VjI1TDcgMTR6Ii8+PHBhdGggc3Ryb2tlLWxpbmVjYXA9ImJ1dHQiIGQ9Ik05IDI2YzAgMiAxLjUgMiAyLjUgNCAxIDEuNSAxIDEgLjUgMy41LTEuNSAxLTEuNSAyLjUtMS41IDIuNS0xLjUgMS41LjUgMi41LjUgMi41IDYuNSAxIDE2LjUgMSAyMyAwIDAgMCAxLjUtMSAwLTIuNSAwIDAgLjUtMS41LTEtMi41LS41LTIuNS0uNS0yIC41LTMuNSAxLTIgMi41LTIgMi41LTQtOC41LTEuNS0xOC41LTEuNS0yNyAweiIvPjxwYXRoIGZpbGw9Im5vbmUiIGQ9Ik0xMS41IDMwYzMuNS0xIDE4LjUtMSAyMiAwTTEyIDMzLjVjNi0xIDE1LTEgMjEgMCIvPjwvZz48L3N2Zz4=', wk: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgdmlld0JveD0iMCAwIDQ1IDQ1Ij48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjEuNSI+PHBhdGggc3Ryb2tlLWxpbmVqb2luPSJtaXRlciIgZD0iTTIyLjUgMTEuNjNWNk0yMCA4aDUiLz48cGF0aCBmaWxsPSIjZmZmIiBzdHJva2UtbGluZWNhcD0iYnV0dCIgc3Ryb2tlLWxpbmVqb2luPSJtaXRlciIgZD0iTTIyLjUgMjVzNC41LTcuNSAzLTEwLjVjMCAwLTEtMi41LTMtMi41cy0zIDIuNS0zIDIuNWMtMS41IDMgMyAxMC41IDMgMTAuNSIvPjxwYXRoIGZpbGw9IiNmZmYiIGQ9Ik0xMS41IDM3YzUuNSAzLjUgMTUuNSAzLjUgMjEgMHYtN3M5LTQuNSA2LTEwLjVjLTQtNi41LTEzLjUtMy41LTE2IDRWMjd2LTMuNWMtMy41LTcuNS0xMy0xMC41LTE2LTQtMyA2IDUgMTAgNSAxMHoiLz48cGF0aCBkPSJNMTEuNSAzMGM1LjUtMyAxNS41LTMgMjEgMG0tMjEgMy41YzUuNS0zIDE1LjUtMyAyMSAwbS0yMSAzLjVjNS41LTMgMTUuNS0zIDIxIDAiLz48L2c+PC9zdmc+',
-  bp: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxwYXRoIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2Utd2lkdGg9IjEuNSIgZD0iTTIyLjUgOWE0IDQgMCAwIDAtMy4yMiA2LjM4IDYuNDggNi40OCAwIDAgMC0uODcgMTAuNjVjLTMgMS4wNi03LjQxIDUuNTUtNy40MSAxMy40N2gyM2MwLTcuOTItNC40MS0xMi40MS03LjQxLTEzLjQ3YTYuNDYgNi40NiAwIDAgMC0uODctMTAuNjVBNC4wMSA0LjAxIDAgMCAwIDIyLjUgOXoiLz48L3N2Zz4=', bn: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGw9Im5vbmUiIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48cGF0aCBmaWxsPSIjMDAwIiBkPSJNMjIgMTBjMTAuNSAxIDE2LjUgOCAxNiAyOUgxNWMwLTkgMTAtNi41IDgtMjEiLz48cGF0aCBmaWxsPSIjMDAwIiBkPSJNMjQgMThjLjM4IDIuOTEtNS41NSA3LjM3LTggOS0zIDItMi44MiA0LjM0LTUgNC0xLjA0LS45NCAxLjQxLTMuMDQgMC0zLTEgMCAuMTkgMS4yMy0xIDItMSAwLTQgMS00LTQgMC0yIDYtMTIgNi0xMnMxLjg5LTEuOSAyLTMuNWMtLjczLTEtLjUtMi0uNS0zIDEtMSAzIDIuNSAzIDIuNWgycy43OC0yIDIuNS0zYzEgMCAxIDMgMSAzIi8+PHBhdGggZmlsbD0iI2VjZWNlYyIgc3Ryb2tlPSIjZWNlY2VjIiBkPSJNOS41IDI1LjVhLjUuNSAwIDEgMS0xIDAgLjUuNSAwIDEgMSAxIDBtNS40My05Ljc1YS41IDEuNSAzMCAxIDEtLjg2LS41LjUgMS41IDMwIDEgMSAuODYuNSIvPjxwYXRoIGZpbGw9IiNlY2VjZWMiIHN0cm9rZT0ibm9uZSIgZD0ibTI0LjU1IDEwLjQtLjQ1IDEuNDUuNS4xNWMzLjE1IDEgNS42NSAyLjQ5IDcuOSA2Ljc1UzM1Ljc1IDI5LjA2IDM1LjI1IDM5bC0uMDUuNWgyLjI1bC4wNS0uNWMuNS0xMC4wNi0uODgtMTYuODUtMy4yNS0yMS4zNHMtNS43OS02LjY0LTkuMTktNy4xNnoiLz48L2c+PC9zdmc+', bb: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGw9Im5vbmUiIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48ZyBmaWxsPSIjMDAwIiBzdHJva2UtbGluZWNhcD0iYnV0dCI+PHBhdGggZD0iTTkgMzZjMy40LTEgMTAuMS40IDEzLjUtMiAzLjQgMi40IDEwLjEgMSAxMy41IDIgMCAwIDEuNi41IDMgMi0uNyAxLTEuNiAxLTMgLjUtMy40LTEtMTAuMS41LTEzLjUtMS0zLjQgMS41LTEwLjEgMC0xMy41IDEtMS40LjUtMi4zLjUtMy0uNSAxLjQtMiAzLTIgMy0yeiIvPjxwYXRoIGQ9Ik0xNSAzMmMyLjUgMi41IDEyLjUgMi41IDE1IDAgLjUtMS41IDAtMiAwLTIgMC0yLjUtMi41LTQtMi41LTQgNS41LTEuNSA2LTExLjUtNS0xNS41LTExIDQtMTAuNSAxNC01IDE1LjUgMCAwLTIuNSAxLjUtMi41IDQgMCAwLS41LjUgMCAyeiIvPjxwYXRoIGQ9Ik0yNSA4YTIuNSAyLjUgMCAxIDEtNSAwIDIuNSAyLjUgMCAxIDEgNSAweiIvPjwvZz48cGF0aCBzdHJva2U9IiNlY2VjZWMiIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiIGQ9Ik0xNy41IDI2aDEwTTE1IDMwaDE1bS03LjUtMTQuNXY1TTIwIDE4aDUiLz48L2c+PC9zdmc+', br: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48cGF0aCBzdHJva2UtbGluZWNhcD0iYnV0dCIgZD0iTTkgMzloMjd2LTNIOXptMy41LTcgMS41LTIuNWgxN2wxLjUgMi41em0tLjUgNHYtNGgyMXY0eiIvPjxwYXRoIHN0cm9rZS1saW5lY2FwPSJidXR0IiBzdHJva2UtbGluZWpvaW49Im1pdGVyIiBkPSJNMTQgMjkuNXYtMTNoMTd2MTN6Ii8+PHBhdGggc3Ryb2tlLWxpbmVjYXA9ImJ1dHQiIGQ9Ik0xNCAxNi41IDExIDE0aDIzbC0zIDIuNXpNMTEgMTRWOWg0djJoNVY5aDV2Mmg1VjloNHY1eiIvPjxwYXRoIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2VjZWNlYyIgc3Ryb2tlLWxpbmVqb2luPSJtaXRlciIgc3Ryb2tlLXdpZHRoPSIxIiBkPSJNMTIgMzUuNWgyMW0tMjAtNGgxOW0tMTgtMmgxN20tMTctMTNoMTdNMTEgMTRoMjMiLz48L2c+PC9zdmc+', bq: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48ZyBzdHJva2U9Im5vbmUiPjxjaXJjbGUgY3g9IjYiIGN5PSIxMiIgcj0iMi43NSIvPjxjaXJjbGUgY3g9IjE0IiBjeT0iOSIgcj0iMi43NSIvPjxjaXJjbGUgY3g9IjIyLjUiIGN5PSI4IiByPSIyLjc1Ii8+PGNpcmNsZSBjeD0iMzEiIGN5PSI5IiByPSIyLjc1Ii8+PGNpcmNsZSBjeD0iMzkiIGN5PSIxMiIgcj0iMi43NSIvPjwvZz48cGF0aCBzdHJva2UtbGluZWNhcD0iYnV0dCIgZD0iTTkgMjZjOC41LTEuNSAyMS0xLjUgMjcgMGwyLjUtMTIuNUwzMSAyNWwtLjMtMTQuMS01LjIgMTMuNi0zLTE0LjUtMyAxNC41LTUuMi0xMy42TDE0IDI1IDYuNSAxMy41eiIvPjxwYXRoIHN0cm9rZS1saW5lY2FwPSJidXR0IiBkPSJNOSAyNmMwIDIgMS41IDIgMi41IDQgMSAxLjUgMSAxIC41IDMuNS0xLjUgMS0xLjUgMi41LTEuNSAyLjUtMS41IDEuNS41IDIuNS41IDIuNSA2LjUgMSAxNi41IDEgMjMgMCAwIDAgMS41LTEgMC0yLjUgMCAwIC41LTEuNS0xLTIuNS0uNS0yLjUtLjUtMiAuNS0zLjUgMS0yIDIuNS0yIDIuNS00LTguNS0xLjUtMTguNS0xLjUtMjcgMHoiLz48cGF0aCBmaWxsPSJub25lIiBzdHJva2UtbGluZWNhcD0iYnV0dCIgZD0iTTExIDM4LjVhMzUgMzUgMSAwIDAgMjMgMCIvPjxwYXRoIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2VjZWNlYyIgZD0iTTExIDI5YTM1IDM1IDEgMCAxIDIzIDBtLTIxLjUgMi41aDIwbS0yMSAzYTM1IDM1IDEgMCAwIDIyIDBtLTIzIDNhMzUgMzUgMSAwIDAgMjQgMCIvPjwvZz48L3N2Zz4=', bk: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgdmlld0JveD0iMCAwIDQ1IDQ1Ij48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjEuNSI+PHBhdGggc3Ryb2tlLWxpbmVqb2luPSJtaXRlciIgZD0iTTIyLjUgMTEuNlY2Ii8+PHBhdGggZmlsbD0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9ImJ1dHQiIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiIGQ9Ik0yMi41IDI1czQuNS03LjUgMy0xMC41YzAgMC0xLTIuNS0zLTIuNXMtMyAyLjUtMyAyLjVjLTEuNSAzIDMgMTAuNSAzIDEwLjUiLz48cGF0aCBmaWxsPSIjMDAwIiBkPSJNMTEuNSAzN2EyMi4zIDIyLjMgMCAwIDAgMjEgMHYtN3M5LTQuNSA2LTEwLjVjLTQtNi41LTEzLjUtMy41LTE2IDRWMjd2LTMuNWMtMy41LTcuNS0xMy0xMC41LTE2LTQtMyA2IDUgMTAgNSAxMHoiLz48cGF0aCBzdHJva2UtbGluZWpvaW49Im1pdGVyIiBkPSJNMjAgOGg1Ii8+PHBhdGggc3Ryb2tlPSIjZWNlY2VjIiBkPSJNMzIgMjkuNXM4LjUtNCA2LTkuN0MzNC4xIDE0IDI1IDE4IDIyLjUgMjQuNnYyLjEtMi4xQzIwIDE4IDkuOSAxNCA3IDE5LjljLTIuNSA1LjYgNC44IDkgNC44IDkiLz48cGF0aCBzdHJva2U9IiNlY2VjZWMiIGQ9Ik0xMS41IDMwYzUuNS0zIDE1LjUtMyAyMSAwbS0yMSAzLjVjNS41LTMgMTUuNS0zIDIxIDBtLTIxIDMuNWM1LjUtMyAxNS41LTMgMjEgMCIvPjwvZz48L3N2Zz4=',
+// пиксельные фигуры Rep Camp: силуэты привычные, рисунок свой (сетка 20×20, рисует tools/pieces_px.py)
+const PX = {"p": ["....................", "....................", "....................", "........####........", ".......#oooo#.......", "......#oooooo#......", "......#oooooo#......", "......#oooooo#......", ".......#oooo#.......", "......########......", ".......#oooo#.......", ".......#oooo#.......", "......#oooooo#......", ".....#oooooooo#.....", "....#oooooooooo#....", "...#oooooooooooo#...", "...#ssssssssssss#...", "...##############...", "....................", "...................."], "n": ["....................", "........#.#.........", ".......#o#o##.......", "......#ooooooo#.....", ".....#oo#ooooo+#....", "....#ooooooooo+o#...", "...#oooooooooo+oo#..", "..#oxooo#ooooo+oo#..", "..#ooooo#ooooo+ooo#.", "...#ooo#.#oooo+ooo#.", "....###..#ooo+oooo#.", "........#ooo+ooooo#.", ".......#ooo+oooooo#.", "......#oooooooooo#..", ".....#ooooooooooo#..", "....#oooooooooooo#..", "....#sssssssssssss#.", "....###############.", "....................", "...................."], "b": ["....................", ".........##.........", "........#xx#........", ".........##.........", ".......##oo##.......", "......#oooooo#......", ".....#oooooooo#.....", ".....#ooo++ooo#.....", ".....#oo+oo+oo#.....", ".....#oooooooo#.....", "......#oooooo#......", ".......#oooo#.......", "......########......", "......#oooooo#......", ".....#oooooooo#.....", "..###oooooooooo###..", ".#ooossssssssssooo#.", ".##################.", "....................", "...................."], "r": ["....................", "....................", "...###.######.###...", "...#o#.#oooo#.#o#...", "...#o###oooo###o#...", "...#oooooooooooo#...", "....#++++++++++#....", "....#oooooooooo#....", "....#oooooooooo#....", "....#oooooooooo#....", "....#oooooooooo#....", "....#oooooooooo#....", "....#oooooooooo#....", "....#++++++++++#....", "...#oooooooooooo#...", "..#oooooooooooooo#..", "..#ssssssssssssss#..", "..################..", "....................", "...................."], "q": ["....................", "..#..............#..", ".#x#....#..#....#x#.", "..#....#x##x#....#..", "..#.....#..#.....#..", "..##...#o##o#...##..", "..#o#.#oo##oo#.#o#..", "..#oo#ooo##ooo#oo#..", "...#oooooooooooo#...", "...#oooooooooooo#...", "....#oooooooooo#....", "....#++++++++++#....", ".....#oooooooo#.....", "....#++++++++++#....", "....#oooooooooo#....", "...#oooooooooooo#...", "...#ssssssssssss#...", "...##############...", "....................", "...................."], "k": [".........##.........", ".......##xx##.......", ".........##.........", "........####........", ".....###oooo###.....", "....#ooo#oo#ooo#....", "...#oooo#oo#oooo#...", "...#ooooo##ooooo#...", "...#oooooooooooo#...", "....#oooooooooo#....", "....#oooooooooo#....", "....#++++++++++#....", ".....#oooooooo#.....", "....#++++++++++#....", "....#oooooooooo#....", "...#oooooooooooo#...", "...#ssssssssssss#...", "...##############...", "....................", "...................."]};
+const PXPAL = {
+  w: { '#': '#2a1f3d', o: '#ffffff', s: '#e2daec', '+': '#2a1f3d', x: '#ff4f7b' },
+  b: { '#': '#140e1f', o: '#3d2f5c', s: '#2a1f3d', '+': '#e9e4f5', x: '#ff4f7b' },
 };
-const PIMG = {}; for (const k in PIECE_URL) { const im = new Image(); im.src = PIECE_URL[k]; PIMG[k] = im; }
+const PIMG = {}, PIECE_URL = {};
+for (const c of 'wb') for (const t of 'pnbrqk') {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 20; const g = cv.getContext('2d');
+  PX[t].forEach((row, y) => [...row].forEach((ch, x) => { const col = PXPAL[c][ch]; if (col) { g.fillStyle = col; g.fillRect(x, y, 1, 1); } }));
+  PIMG[c + t] = cv; PIECE_URL[c + t] = cv.toDataURL();
+}
 const miniEl = $('#mini'), mc = $('#miniC'), mg = mc.getContext('2d');
 const SQ_PX = 60; mc.width = mc.height = SQ_PX * 8;
 let miniRot = 0, miniLegal = [], hintMove = null;
@@ -1211,7 +1230,7 @@ function drawMini(t) {
   // висящие фигуры (тренер)
   for (const sq of hanging) { const [x, y] = cell(sq); mg.fillStyle = C.bak; mg.beginPath(); mg.arc(x + S - 11, y + 11, 9, 0, 7); mg.fill(); mg.fillStyle = C.limonad; mg.font = 'bold 14px "IBM Plex Mono", monospace'; mg.textAlign = 'center'; mg.textBaseline = 'middle'; mg.fillText('!', x + S - 11, y + 12); }
   const b = game.board();
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) { const p = b[r][f]; if (!p) continue; const im = PIMG[p.color + p.type]; if (!im.complete) continue; const [x, y] = cell('abcdefgh'[f] + (8 - r)); mg.drawImage(im, x, y, S, S); }
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) { const p = b[r][f]; if (!p) continue; const im = PIMG[p.color + p.type]; const [x, y] = cell('abcdefgh'[f] + (8 - r)); mg.imageSmoothingEnabled = false; mg.drawImage(im, x, y, S, S); }
   if (selected) for (const m of miniLegal) { const [x, y] = cell(m.to); mg.fillStyle = 'rgba(20,85,30,.5)'; if (m.captured) { mg.beginPath(); mg.arc(x + S / 2, y + S / 2, S / 2 - 2, 0, 7); mg.arc(x + S / 2, y + S / 2, S / 2 - 8, 0, 7, true); mg.fill(); } else { mg.beginPath(); mg.arc(x + S / 2, y + S / 2, S * .14, 0, 7); mg.fill(); } }
   // координаты, как на lichess
   mg.font = '600 11px "IBM Plex Mono", monospace'; mg.textBaseline = 'alphabetic';
