@@ -1,12 +1,12 @@
 // Rep Camp Chess — партия, режимы, камера, сценки, интерфейс.
 import * as THREE from 'three';
-import { Retro, mat, C } from './gfx.js?v=1795260048';
-import { buildWorld, BT } from './world.js?v=1795260048';
-import { makePiece } from './figures.js?v=1795260048';
-import { initAudio, sfx, setMusic, setSfx } from './audio.js?v=1795260048';
-import * as AU from './audio.js?v=1795260048';
-import { CHAPTERS, preparePuzzle } from './story.js?v=1795260048';
-import { LESSONS } from './lessons.js?v=1795260048';
+import { Retro, mat, C } from './gfx.js?v=1795260835';
+import { buildWorld, BT } from './world.js?v=1795260835';
+import { makePiece } from './figures.js?v=1795260835';
+import { initAudio, sfx, setMusic, setSfx } from './audio.js?v=1795260835';
+import * as AU from './audio.js?v=1795260835';
+import { CHAPTERS, preparePuzzle } from './story.js?v=1795260835';
+import { LESSONS } from './lessons.js?v=1795260835';
 
 const $ = s => document.querySelector(s);
 const Chess = window.Chess;
@@ -191,7 +191,7 @@ async function walk(f, to, opts = {}) {
 // ---------- сценки взятий ----------
 const WORDS = { p: ['ПЛЮХ', 'СНЕЖОК'], n: ['ИГОГО', 'ВЖУХ'], b: ['ДЗЫНЬ', 'ОП'], r: ['БАМ', 'ТЫДЫЩ'], q: ['ЧЕСС И КАЙФ', 'ВОТ ТАК'], k: ['ПОДУШКОЙ', 'ХРЯСЬ'] };
 const CRY = ['СЮДАА', 'С КАЙФОМ!'];   // фирменное: победа и взятие
-const CAP_ANY = ['СЮДАА', 'С КАЙФОМ!', 'СЮДААА!', 'ЗАБРАЛ', 'В БАНЮ!', 'НА ЗАРЯДКУ!', 'ХОП', 'ЛОВИ', 'ОПА', 'КАЙФ', 'ПРОЩАЙ', 'БАЦ', 'ЧИК', 'ВОТ ТАК ВОТ'];
+const CAP_ANY = ['СЮДАА', 'С КАЙФОМ!', 'СЮДААА!', 'МОЁ!', 'В БАНЮ!', 'НА ЗАРЯДКУ!', 'ХОП', 'ЛОВИ', 'ОПА', 'КАЙФ', 'ПРОЩАЙ', 'БАЦ', 'ЧИК', 'ВОТ ТАК ВОТ'];
 // фраза при взятии: не повторяется с последними восемью, своё слово фигуры — в приоритете
 let capRecent = [];
 // в тренере — спокойные слова тренера вместо вскриков
@@ -389,7 +389,7 @@ const SIDE = { w: 'лагерь', b: 'орги' };
 let engine, engCb;
 function eng() {
   if (engine) return engine;
-  engine = new Worker('stockfish.js?v=1795260048');
+  engine = new Worker('stockfish.js?v=1795260835');
   engine.onmessage = e => { const l = String(e.data); if (engCb && l.startsWith('bestmove')) { const c = engCb; engCb = null; c(l.split(/\s+/)[1]); } };
   engine.postMessage('uci'); engine.postMessage('isready');
   return engine;
@@ -420,7 +420,7 @@ async function afterMove(mv) {
   if (mode === 'lesson') return lessonAfter(mv);
   if (mv._post && !game.game_over()) {
     busy = true; const r = await coachReview(mv); busy = false;
-    if (r === 'undo') { game.undo(); rebuild(); updHud(); viewForTurn(); refreshHanging(); coachSay('вернули. подумай ещё раз — время есть'); return; }
+    if (r === 'undo') { game.undo(); rebuild(); updHud(); viewForTurn(); refreshHanging(); coachSay('ход вернули. подумай ещё раз, никто не торопит'); return; }
   } else if (mv._post && game.in_checkmate()) coachSay('мат! молодец');
   if (game.game_over()) return endGame();
   if (mode === 'ai' && game.turn() !== mySide) aiTurn();
@@ -435,12 +435,12 @@ let lesson = null, drill = null; const starMeshes = new Map();
 const starGeo = new THREE.OctahedronGeometry(.3, 0), starMat = new THREE.MeshBasicMaterial({ color: C.limonad });
 const lessonsDone = () => { try { return new Set(JSON.parse(LS.get('rcLessons') || '[]')); } catch (_) { return new Set(); } };
 const HOW = {
-  r: 'ладья ходит по прямой: вверх, вниз, влево, вправо — на сколько угодно клеток, но не перепрыгивает',
+  r: 'ладья ходит по прямой на сколько угодно клеток. перепрыгивать через фигуры она не умеет',
   b: 'слон ходит по диагонали на сколько угодно клеток и всегда остаётся на клетках своего цвета',
-  q: 'ферзь ходит как ладья и как слон вместе: по прямой и по диагонали',
-  n: 'конь ходит буквой «г»: две клетки в одну сторону и одну вбок. он единственный умеет перепрыгивать',
+  q: 'ферзь ходит и как ладья, и как слон: по прямой и по диагонали',
+  n: 'конь ходит буквой «г»: две клетки прямо и одна вбок. и только он умеет перепрыгивать',
   k: 'король ходит на одну клетку в любую сторону',
-  p: 'пешка идёт только вперёд на одну клетку, с начальной позиции можно на две. бьёт наискосок вперёд',
+  p: 'пешка идёт вперёд на одну клетку, со стартовой клетки можно на две. бьёт наискосок',
 };
 function clearStars() { for (const m of starMeshes.values()) scene.remove(m); starMeshes.clear(); }
 function renderTrainer() {
@@ -545,7 +545,7 @@ function lessonCheck(m) {
   const ok = T.kind === 'move' ? acceptOk(T, game.fen(), m) : seqOk(m);
   if (ok) { lesson.active = false; return true; }
   sfx('deny'); selected = null; selM.visible = false; showMoves([]);
-  coachSay(pickOne(['не то. посмотри ещё раз', 'мимо. подумай, что тут главное', 'ход возможный, но задание другое']) + (T.hint ? '. застрял — жми «подсказка»' : ''), 5000);
+  coachSay(pickOne(['не то. посмотри ещё раз', 'мимо. попробуй другой ход', 'ход возможный, но задание другое']) + (T.hint ? '. застрял — жми «подсказка»' : ''), 5000);
   return false;
 }
 async function lessonAfter(mv) {
@@ -600,7 +600,7 @@ const NAME_INS = { p: 'пешкой', n: 'конём', b: 'слоном', r: 'л
 const NAME = { p: 'пешка', n: 'конь', b: 'слон', r: 'ладья', q: 'ферзь', k: 'король' };
 function coachEng() {
   if (coachW) return coachW;
-  coachW = new Worker('stockfish.js?v=1795260048'); let last = { cp: 0, mate: null, pv: [] };
+  coachW = new Worker('stockfish.js?v=1795260835'); let last = { cp: 0, mate: null, pv: [] };
   coachW.onmessage = e => {
     const l = String(e.data);
     if (l.startsWith('info') && l.includes(' pv ') && !l.includes('bound')) { const mm = l.match(/ score (cp|mate) (-?\d+)/); if (mm) last = { cp: mm[1] === 'cp' ? +mm[2] : 0, mate: mm[1] === 'mate' ? +mm[2] : null, pv: l.split(' pv ')[1].trim().split(/\s+/) }; }
@@ -649,7 +649,7 @@ async function coachReview(mv) {
   }
   if (loss >= 12 && !isBest && !opening) coachSay(`${who}${mv.san} — так себе. ${reasonAfter(post, mv.color)}${bestSan ? ` сильнее было ${bestSan}.` : ''}`, 6500);
   else if (isBest && (mv.captured || mv.san.includes('+') || Math.random() < .3)) coachSay(pickOne(['молодец, это лучший ход', 'правильно, сильнее тут не найти', 'точно. так бы сыграл и движок', 'отлично, так и надо']), 3500);
-  else if (loss < 3 && mv.captured && Math.random() < .5) coachSay(pickOne(['хорошее взятие', 'правильно, бери', 'верно, забрал']), 2500);
+  else if (loss < 3 && mv.captured && Math.random() < .5) coachSay(pickOne(['хорошее взятие', 'правильно, бери', 'верно, фигура твоя']), 2500);
   return 'go';
 }
 // фигуры, которые сейчас висят у того, кто ходит: под боем и без защиты (или бьёт кто-то дешевле)
@@ -715,7 +715,7 @@ const WIN = {
   w: [['СЮДАА!', 'партия за лагерем. орги идут мыть посуду'], ['С КАЙФОМ!', 'мат, и никто не душнил'], ['СЮДААА!', 'король оргов ушёл в баню думать о жизни'],
       ['ЧЕСС И КАЙФ', 'красиво. номинируем на Rep Awards'], ['ЗАБРАЛИ!', 'чистый мат, даже судья хлопает'], ['СЮДАА, СЮДАА', 'орги уже просят реванш на весенней смене'],
       ['С КАЙФОМ!', 'глинтвейн сегодня за счёт оргов'], ['ВОТ ТАК', 'мат быстрее, чем остыл глинтвейн'], ['КАЙФАРИКИ!', 'эту партию будут пересказывать у костра'],
-      ['СЮДАА!', 'двигаешь фигурки как продолжашка со стажем'], ['С КАЙФОМ И С МАТОМ', 'орги ушли совещаться в столовую'], ['ПОБЕДА', 'запишем в протокол и в легенды лагеря']],
+      ['СЮДАА!', 'двигаешь фигурки как продолжашка со стажем'], ['С КАЙФОМ И С МАТОМ', 'орги ушли совещаться в столовую'], ['ПОБЕДА', 'запишем в протокол и повесим на стенд']],
   b: [['СЮДАА!', 'орги победили. лагерь отправляется на зарядку'], ['С КАЙФОМ!', 'опыт оргов не пропьёшь даже глинтвейном'], ['ОРГИ ЗНАЮТ', 'кайфарики, это был урок. лекция завтра в 11'],
       ['СЮДААА!', 'мат. кто проиграл, тот моет кружки'], ['ЧЕСС И КАЙФ', 'орги забирают партию и последний пряник'], ['ЗАБРАЛИ!', 'орги сегодня в форме. реванш после бани'],
       ['С КАЙФОМ!', 'главный орг доволен, бейдж сияет'], ['ВОТ ТАК', 'организаторы тоже умеют двигать фигурки'], ['СЮДАА!', 'штаб оргов празднует. тихо, без музлота'],
@@ -940,8 +940,8 @@ function startGame(m, opts = {}) {
   else if (trainer && !SET.coachSeen) { SET.coachSeen = true; saveSet(); setTimeout(() => say([TUTOR_COACH]), 700); }
   saveGame();
 }
-const TUTOR = [['тренер', 'привет! тапни свою фигуру — она подпрыгнет, а клетки, куда можно пойти, загорятся'], ['тренер', 'потом тапни нужную клетку. ходить можно и по схеме внизу, так даже точнее'], ['тренер', 'доску крути пальцем, «вид» меняет ракурс. в «паузе» — список ходов, ничья, сдаться и настройки']];
-const TUTOR_COACH = ['тренер', 'я рядом всю партию. зевнёшь фигуру — скажу и дам вернуть ход, «!» на схеме — фигура висит, «подсказка» покажет хороший ход'];
+const TUTOR = [['тренер', 'привет. тапни свою фигуру: она подпрыгнет, а клетки, куда можно пойти, загорятся'], ['тренер', 'потом тапни нужную клетку. ходить можно и по схеме внизу, так даже точнее'], ['тренер', 'доску крути пальцем, «вид» меняет ракурс. в «паузе» — список ходов, ничья, сдаться и настройки']];
+const TUTOR_COACH = ['тренер', 'я рядом всю партию. зевнёшь фигуру — скажу и дам переходить. «!» на схеме значит, что фигура висит. застрял — жми «подсказку»'];
 let fullShown = 0;
 function toMenu() {
   if (typeof clearStars === 'function') { lesson = null; drill = null; clearStars(); }
@@ -1136,7 +1136,7 @@ async function storyWin() {
   if (progress() <= story.i) LS.set('rcStory', story.i + 1);
   await say(story.ch.outro);
   if (story.i + 1 < CHAPTERS.length) { startChapter(story.i + 1); }
-  else { showEnd('КУБОК СМЕНЫ', 'ты прошёл весь лагерь. весной — заново'); }
+  else { showEnd('КУБОК СМЕНЫ', 'вся смена пройдена. весной — заново'); }
 }
 
 // ---------- зрители у костра ----------
