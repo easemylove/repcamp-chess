@@ -63,8 +63,20 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 #status:empty{display:none}
 #mini{position:absolute;left:12px;bottom:calc(env(safe-area-inset-bottom) + 12px);display:none;pointer-events:auto;background:var(--bak);border:3px solid var(--pap);box-shadow:4px 4px 0 var(--mal);padding:3px;transform:rotate(-1.5deg)}
 #mini.on{display:block}
-#mini canvas{display:block;width:min(30vh,200px);height:min(30vh,200px);image-rendering:pixelated;cursor:pointer}
-@media (orientation:portrait){#mini{left:50%;transform:translateX(-50%) rotate(-1.5deg);bottom:calc(env(safe-area-inset-bottom) + 58px)}#mini canvas{width:min(52vw,220px);height:min(52vw,220px)}}
+#mini canvas{display:block;width:min(30vh,220px);height:min(30vh,220px);cursor:pointer}
+#mini .mat{height:18px;display:flex;align-items:center;gap:1px;font-size:10px;line-height:1;padding:0 2px;white-space:nowrap;overflow:hidden}
+#mini .mat .who{opacity:.65;margin-right:5px}
+#mini .mat img{width:15px;height:15px;margin-right:-4px}
+#mini .mat b{margin-left:8px;color:var(--lim);font-weight:600}
+#matInfo{opacity:.75}
+#coach{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 84px);width:min(92vw,440px);background:var(--pap);color:var(--bak);border:3px solid var(--bak);box-shadow:5px 5px 0 var(--my);padding:9px 12px 10px;display:none;pointer-events:auto;font-size:13px;line-height:1.4}
+#coach.on{display:block;animation:cin .25s steps(4)}
+@keyframes cin{from{transform:translateX(-50%) translateY(-8px);opacity:0}}
+#coach .who{font-family:"RepCamp Stamp";font-size:17px;color:var(--mal);line-height:1;margin-bottom:3px}
+#coachB{display:flex;gap:8px;margin-top:8px} #coachB:empty{display:none}
+#coachB button{flex:1;font-family:"Manrope";font-weight:800;font-size:14px;padding:7px;border:2px solid var(--bak);background:var(--pap);color:var(--bak)}
+#coachB button:first-child{background:var(--bak);color:var(--pap)}
+@media (orientation:portrait){#mini{left:50%;transform:translateX(-50%) rotate(-1.5deg);bottom:calc(env(safe-area-inset-bottom) + 54px)}#mini canvas{width:min(56vw,230px);height:min(56vw,230px)}#coach{top:calc(env(safe-area-inset-top) + 96px)}}
 #pop{position:fixed;left:0;right:0;top:22%;text-align:center;font-family:"RepCamp Stamp";font-size:min(15vw,96px);line-height:1;pointer-events:none;opacity:0;text-shadow:5px 5px 0 var(--bak)}
 #pop.on{animation:pop 1.3s steps(12) forwards}
 @keyframes pop{0%{opacity:1;transform:scale(.3) rotate(-8deg)}15%{opacity:1;transform:scale(1.15) rotate(3deg)}25%{transform:scale(1) rotate(-2deg)}80%{opacity:1}100%{opacity:0;transform:scale(1.05) translateY(-20px)}}
@@ -141,7 +153,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <h2>НАСТРОЙКИ</h2>
   <div class="list tg">
     <button id="sGfx"></button><button id="sCrt"></button><button id="sSharp"></button>
-    <button id="sScenes"></button><button id="sFlip"></button><button id="sMusic"></button><button id="sSfx"></button>
+    <button id="sScenes"></button><button id="sCoach"></button><button id="sFlip"></button><button id="sMusic"></button><button id="sSfx"></button>
   </div>
   <button class="back" data-go="menu">← назад</button>
 </div>
@@ -154,20 +166,21 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 <div id="hud">
   <div id="bar">
-    <div id="info"><div id="turn"></div><div id="who"></div></div>
-    <div id="btns"><button id="miniBtn">схема</button><button id="viewBtn">вид</button><button id="topBtn">сверху</button><button id="undo">назад</button><button id="menuBtn">меню</button></div>
+    <div id="info"><div id="turn"></div><div id="who"></div><div id="matInfo"></div></div>
+    <div id="btns"><button id="hintBtn">подсказка</button><button id="miniBtn">схема</button><button id="viewBtn">вид</button><button id="topBtn">сверху</button><button id="undo">назад</button><button id="menuBtn">меню</button></div>
   </div>
   <div id="status"></div>
-  <div id="mini"><canvas id="miniC" width="128" height="128"></canvas></div>
+  <div id="mini"><div class="mat" id="matTop"></div><canvas id="miniC" width="480" height="480"></canvas><div class="mat" id="matBot"></div></div>
+  <div id="coach"><div class="who">тренер</div><div id="coachT"></div><div id="coachB"></div></div>
 </div>
 <div id="pop"></div>
 <div id="dialog"><div id="dWho"></div><div id="dText"></div></div>
 <div id="promo"><p>в кого превращаемся?</p><button data-p="q">ферзь</button><button data-p="r">ладья</button><button data-p="b">слон</button><button data-p="n">конь</button></div>
 
-<script src="chess.js?v=1794083424"></script>
-<script type="importmap">{"imports":{"three":"./three.module.min.js?v=1794083424"}}</script>
+<script src="chess.js?v=1795255430"></script>
+<script type="importmap">{"imports":{"three":"./three.module.min.js?v=1795255430"}}</script>
 <script type="module">
-  import './main.js?v=1794083424';
+  import './main.js?v=1795255430';
   document.fonts.ready.then(() => { const l = document.getElementById('load'); l.style.opacity = 0; setTimeout(() => l.remove(), 450); });
 </script>
 </body>

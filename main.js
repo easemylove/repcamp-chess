@@ -1,10 +1,10 @@
 // Rep Camp Chess — партия, режимы, камера, сценки, интерфейс.
 import * as THREE from 'three';
-import { Retro, mat, C } from './gfx.js?v=1794083424';
-import { buildWorld, BT } from './world.js?v=1794083424';
-import { makePiece } from './figures.js?v=1794083424';
-import { initAudio, sfx, setMusic, setSfx } from './audio.js?v=1794083424';
-import { CHAPTERS, preparePuzzle } from './story.js?v=1794083424';
+import { Retro, mat, C } from './gfx.js?v=1795255430';
+import { buildWorld, BT } from './world.js?v=1795255430';
+import { makePiece } from './figures.js?v=1795255430';
+import { initAudio, sfx, setMusic, setSfx } from './audio.js?v=1795255430';
+import { CHAPTERS, preparePuzzle } from './story.js?v=1795255430';
 
 const $ = s => document.querySelector(s);
 const Chess = window.Chess;
@@ -12,7 +12,7 @@ const Chess = window.Chess;
 // ---------- настройки ----------
 const LS = { get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} } };
 let saved = {}; try { saved = JSON.parse(LS.get('rcSet') || '{}'); } catch (_) {}
-const SET = Object.assign({ gfx: 'ps1', crt: false, scenes: true, music: true, sfx: true, sharp: 240, flip: true, mini: true }, saved);
+const SET = Object.assign({ gfx: 'ps1', crt: false, scenes: true, music: true, sfx: true, sharp: 240, flip: true, mini: true, coach: true }, saved);
 const saveSet = () => LS.set('rcSet', JSON.stringify(SET));
 
 // ---------- рендер ----------
@@ -105,6 +105,7 @@ function frame(color, s = .92, th = .08) { const g = new THREE.Group(); for (con
 const lastM = [flat(.96, .96, C.limonad, .35), flat(.96, .96, C.limonad, .35)]; lastM.forEach(m => { m.visible = false; scene.add(m); });
 const selM = frame(C.limonad); selM.visible = false; scene.add(selM);
 const checkM = frame(C.malina, .96, .12); checkM.visible = false; scene.add(checkM);
+const hintM = frame(C.myata, .96, .12); hintM.visible = false; scene.add(hintM);
 let moveMarks = [];
 function showMoves(list) {
   miniLegal = list;
@@ -185,6 +186,8 @@ async function walk(f, to, opts = {}) {
 
 // ---------- сценки взятий ----------
 const WORDS = { p: ['ПЛЮХ', 'СНЕЖОК'], n: ['ИГОГО', 'ВЖУХ'], b: ['ДЗЫНЬ', 'ОП'], r: ['БАМ', 'ТЫДЫЩ'], q: ['ЧЕСС И КАЙФ', 'ВОТ ТАК'], k: ['ПОДУШКОЙ', 'ХРЯСЬ'] };
+const CRY = ['СЮДАА', 'С КАЙФОМ!'];   // фирменное: победа и взятие
+const pickOne = a => a[(Math.random() * a.length) | 0];
 function pop(text, color = C.malina) { const e = $('#pop'); e.textContent = text; e.style.color = color; e.classList.remove('on'); void e.offsetWidth; e.classList.add('on'); }
 async function cineTo(pos, look, dur = .5) { const p0 = cine.k > 0 ? cine.pos.clone() : cam.position.clone(), l0 = cine.k > 0 ? cine.look.clone() : V(orbit.tx, orbit.ty, orbit.tz); const k0 = cine.k; await tween(dur, k => { cine.pos.lerpVectors(p0, pos, k); cine.look.lerpVectors(l0, look, k); cine.k = k0 + (1 - k0) * k; }); }
 async function cineOut(dur = .6) { const k0 = cine.k; await tween(dur, k => cine.k = k0 * (1 - k)); }
@@ -202,7 +205,7 @@ async function captureScene(att, vic, toPos) {
   await turnTo(att, face(att, vp), .12);
   vic.posing = true; await turnTo(vic, face(vic, att.root.position), .15);
   const W = att.color === 'w'; const p = att.p;
-  pop(WORDS[att.type][(Math.random() * 2) | 0], W ? C.malina : C.myata);
+  pop(Math.random() < .45 ? pickOne(CRY) : pickOne(WORDS[att.type]), W ? C.malina : C.myata);
   const head = () => vic.root.position.clone().add(V(0, .75 * vic.scale, 0));
   const fallBack = (ax = -1.45) => tween(.35, k => { vic.stand.rotation.x = ax * k; }, ease.in);
 
@@ -279,14 +282,19 @@ async function captureScene(att, vic, toPos) {
 
 async function quickCapture(att, vic, toPos) {
   await walk(att, vic.root.position.clone().lerp(att.root.position, .45), { keepFacing: true });
-  vic.root.visible = false; burst(vic); await walk(att, toPos); toGrave(vic);
+  vic.root.visible = false; burst(vic); pop(pickOne(CRY), att.color === 'w' ? C.malina : C.myata); await walk(att, toPos); toGrave(vic);
 }
 
 // ---------- ход ----------
 let busy = false; let chain = Promise.resolve();
 function queueMove(mv) { chain = chain.then(() => doMove(mv)).catch(e => console.error(e)); return chain; }
 async function doMove(mvIn) {
+  const fenBefore = game.fen(), mover = game.turn();
+  const coachIt = coachFor(mover);
+  const preP = coachIt ? (hintCache && hintCache.fen === fenBefore ? Promise.resolve(hintCache.r) : analyse(fenBefore)) : null;
   const mv = game.move(mvIn); if (!mv) return null;
+  hintMove = null; hintM.visible = false; hanging = []; coachHide();
+  if (coachIt) { mv._fen = fenBefore; mv._pre = preP; mv._post = analyse(game.fen()); }
   busy = true; selected = null; showMoves([]); selM.visible = false; checkM.visible = false;
   const f = figs[mv.from]; delete figs[mv.from];
   let vicSq = null; if (mv.flags.includes('e')) vicSq = mv.to[0] + mv.from[1]; else if (mv.captured) vicSq = mv.to;
@@ -329,7 +337,7 @@ const SIDE = { w: 'лагерь', b: 'орги' };
 let engine, engCb;
 function eng() {
   if (engine) return engine;
-  engine = new Worker('stockfish.js?v=1794083424');
+  engine = new Worker('stockfish.js?v=1795255430');
   engine.onmessage = e => { const l = String(e.data); if (engCb && l.startsWith('bestmove')) { const c = engCb; engCb = null; c(l.split(/\s+/)[1]); } };
   engine.postMessage('uci'); engine.postMessage('isready');
   return engine;
@@ -354,13 +362,131 @@ async function aiTurn() {
   await queueMove({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || 'q' });
 }
 
-function afterMove(mv) {
+async function afterMove(mv) {
   updHud();
+  if (mv._post && !game.game_over()) {
+    busy = true; const r = await coachReview(mv); busy = false;
+    if (r === 'undo') { game.undo(); rebuild(); updHud(); viewForTurn(); refreshHanging(); coachSay('вернули. подумай ещё раз — время есть'); return; }
+  } else if (mv._post && game.in_checkmate()) coachSay('мат! сюдаа!');
   if (game.game_over()) return endGame();
   if (mode === 'ai' && game.turn() !== mySide) aiTurn();
   if (mode === 'hot') viewForTurn();
   if (mode === 'story') storyAfter(mv);
+  refreshHanging();
 }
+
+// ---------- тренер для начинашек ----------
+// Свой воркер Stockfish (не мешает ходам компа): оценка до и после хода, зевки, висящие фигуры, подсказка.
+let coachW = null, coachCb = null, coachChain = Promise.resolve(), hanging = [], hintCache = null;
+const NAME_ACC = { p: 'пешку', n: 'коня', b: 'слона', r: 'ладью', q: 'ферзя', k: 'короля' };
+const NAME_INS = { p: 'пешкой', n: 'конём', b: 'слоном', r: 'ладьёй', q: 'ферзём', k: 'королём' };
+const NAME = { p: 'пешка', n: 'конь', b: 'слон', r: 'ладья', q: 'ферзь', k: 'король' };
+function coachEng() {
+  if (coachW) return coachW;
+  coachW = new Worker('stockfish.js?v=1795255430'); let last = { cp: 0, mate: null, pv: [] };
+  coachW.onmessage = e => {
+    const l = String(e.data);
+    if (l.startsWith('info') && l.includes(' pv ') && !l.includes('bound')) { const mm = l.match(/ score (cp|mate) (-?\d+)/); if (mm) last = { cp: mm[1] === 'cp' ? +mm[2] : 0, mate: mm[1] === 'mate' ? +mm[2] : null, pv: l.split(' pv ')[1].trim().split(/\s+/) }; }
+    else if (l.startsWith('bestmove') && coachCb) { const c = coachCb; coachCb = null; c({ ...last, best: l.split(/\s+/)[1] }); last = { cp: 0, mate: null, pv: [] }; }
+  };
+  coachW.postMessage('uci'); coachW.postMessage('isready');
+  return coachW;
+}
+function analyse(fen, depth = 10) {
+  const job = () => new Promise(res => {
+    const t = new Chess(fen);
+    if (t.in_checkmate()) return res({ cpW: t.turn() === 'w' ? -10000 : 10000, best: null, pv: [], mate: 0 });
+    if (t.game_over()) return res({ cpW: 0, best: null, pv: [], mate: null });
+    coachEng();
+    coachCb = r => { const sg = t.turn() === 'w' ? 1 : -1; const cpW = r.mate !== null ? sg * Math.sign(r.mate || -1) * (10000 - Math.abs(r.mate) * 10) : sg * r.cp; res({ ...r, cpW, best: r.best && r.best !== '(none)' ? r.best : null }); };
+    coachW.postMessage('setoption name Skill Level value 20'); coachW.postMessage('position fen ' + fen); coachW.postMessage('go depth ' + depth);
+  });
+  const p = coachChain.then(job); coachChain = p.catch(() => {}); return p;
+}
+const wp = cp => 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * Math.max(-3000, Math.min(3000, cp)))) - 1);
+function coachFor(color) {
+  if (!SET.coach) return false;
+  if (mode === 'ai') return color === mySide;
+  if (mode === 'hot') return true;
+  if (mode === 'story') return !!(story && story.ch.kind === 'game' && color === 'w');
+  return false;
+}
+const uciObj = u => ({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] || undefined });
+function sanOf(fen, u) { try { const t = new Chess(fen); const m = t.move(uciObj(u)); return m ? m.san : u; } catch (_) { return u; } }
+function reasonAfter(post, mover) {
+  if (post.mate !== null && post.mate !== undefined && post.mate > 0) return `теперь у соперника мат в ${post.mate}.`;
+  if (!post.best) return '';
+  const t = new Chess(game.fen()); const m = t.move(uciObj(post.best));
+  if (m && m.captured) return `соперник забирает ${NAME_ACC[m.captured]} — ${m.san}.`;
+  if (m) return `соперник отвечает ${m.san}, и позиция поплыла.`;
+  return '';
+}
+async function coachReview(mv) {
+  let pre, post; try { [pre, post] = await Promise.all([mv._pre, mv._post]); } catch (_) { return 'go'; }
+  if (!pre || !post) return 'go';
+  const sg = mv.color === 'w' ? 1 : -1; const loss = wp(sg * pre.cpW) - wp(sg * post.cpW);
+  const played = mv.from + mv.to + (mv.promotion || ''), isBest = pre.best && (pre.best === played || pre.best === mv.from + mv.to);
+  const bestSan = pre.best ? sanOf(mv._fen, pre.best) : null;
+  const who = mode === 'hot' ? SIDE[mv.color] + ', ' : '';
+  if (loss >= 15 && !isBest) {
+    sfx('deny');
+    const ans = await coachAsk(`${who}ой. ${mv.san} — зевок. ${reasonAfter(post, mv.color)}${bestSan ? ` лучше было ${bestSan}.` : ''}`, ['вернуть ход', 'играю дальше']);
+    return ans === 0 ? 'undo' : 'go';
+  }
+  if (loss >= 9 && !isBest) coachSay(`${who}${mv.san} — так себе. ${reasonAfter(post, mv.color)}${bestSan ? ` сильнее было ${bestSan}.` : ''}`, 6500);
+  else if (isBest && (mv.captured || mv.san.includes('+') || Math.random() < .3)) coachSay(pickOne(['с кайфом! лучший ход', 'сюдаа! это ход движка', 'с кайфом! так и надо', 'чесс и кайф. сильнее не найти']), 3500);
+  else if (loss < 3 && mv.captured && Math.random() < .5) coachSay(pickOne(['с кайфом!', 'сюдаа!']), 2500);
+  return 'go';
+}
+// фигуры, которые сейчас висят у того, кто ходит: под боем и без защиты (или бьёт кто-то дешевле)
+function hangingFor(color) {
+  if (game.in_check()) return [];
+  const fen = game.fen().split(' '); const opp = color === 'w' ? 'b' : 'w';
+  const oppFen = [fen[0], opp, '-', '-', '0', '1'].join(' ');
+  let oppMoves; try { const t = new Chess(); if (!t.load(oppFen)) return []; oppMoves = t.moves({ verbose: true }).filter(m => m.captured); } catch (_) { return []; }
+  const out = [];
+  const b = game.board();
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const p = b[r][f]; if (!p || p.color !== color || p.type === 'k') continue;
+    const sq = 'abcdefgh'[f] + (8 - r);
+    const att = oppMoves.filter(m => m.to === sq); if (!att.length) continue;
+    const cheaper = att.some(m => (VAL[m.piece] || 0) < VAL[p.type]);
+    let defended = false;
+    try { const t = new Chess(); t.load([fen[0], color, '-', '-', '0', '1'].join(' ')); t.remove(sq); t.put({ type: 'p', color: opp }, sq); defended = t.moves({ verbose: true }).some(m => m.to === sq && m.captured); } catch (_) {}
+    if (cheaper || !defended) out.push(sq);
+  }
+  return out;
+}
+function refreshHanging() {
+  hanging = [];
+  if (game.game_over() || !coachFor(game.turn()) || !canMoveNow()) return;
+  hanging = hangingFor(game.turn());
+  if (hanging.length) { const list = hanging.map(sq => `${NAME[game.get(sq).type]} ${sq}`).join(', '); status(`висит: ${list}`); }
+}
+function canMoveNow() { return mode === 'hot' || (mode === 'ai' && game.turn() === mySide) || (mode === 'story' && game.turn() === 'w'); }
+let coachTimer = null;
+function coachSay(text, ms = 4000) { const el = $('#coach'); $('#coachT').textContent = text; $('#coachB').innerHTML = ''; el.classList.add('on'); clearTimeout(coachTimer); coachTimer = setTimeout(() => el.classList.remove('on'), ms); }
+function coachHide() { clearTimeout(coachTimer); $('#coach').classList.remove('on'); }
+function coachAsk(text, buttons) {
+  return new Promise(res => {
+    clearTimeout(coachTimer); const el = $('#coach'); $('#coachT').textContent = text; const bx = $('#coachB'); bx.innerHTML = '';
+    buttons.forEach((t, i) => { const b = document.createElement('button'); b.textContent = t; b.onclick = e => { e.stopPropagation(); sfx('blip'); el.classList.remove('on'); res(i); }; bx.appendChild(b); });
+    el.classList.add('on');
+  });
+}
+async function giveHint() {
+  if (!canTouch() || !coachFor(game.turn())) return;
+  const fen = game.fen(); coachSay('тренер думает…', 8000);
+  const r = await analyse(fen, 12); if (game.fen() !== fen) return;
+  hintCache = { fen, r };
+  if (!r.best) return coachHide();
+  hintMove = uciObj(r.best);
+  hintM.visible = true; hintM.position.copy(sqPos(hintMove.to)); hintM.position.y += .025;
+  selected = hintMove.from; selM.visible = true; selM.position.copy(sqPos(selected)); selM.position.y += .02; showMoves(game.moves({ square: selected, verbose: true }));
+  const pc = game.get(hintMove.from);
+  coachSay(`попробуй ${NAME_INS[pc.type]}: ${sanOf(fen, r.best)}`, 6000);
+}
+
 function canTouch() {
   if (busy || inCut) return false;
   if (mode === 'hot') return true;
@@ -372,7 +498,7 @@ function canTouch() {
 async function endGame() {
   const w = game.in_checkmate() ? (game.turn() === 'w' ? 'b' : 'w') : null;
   let title, sub;
-  if (w) { title = 'МАТ'; sub = w === 'w' ? 'кайфарики победили. орги идут мыть посуду' : 'орги победили. лагерь отправляется на зарядку'; }
+  if (w) { title = 'МАТ'; sub = w === 'w' ? 'кайфарики победили. сюдаа! орги идут мыть посуду' : 'орги победили. лагерь отправляется на зарядку'; pop('СЮДАА!', w === 'w' ? C.malina : C.myata); }
   else if (game.in_stalemate()) { title = 'ПАТ'; sub = 'ничья. все в баню'; }
   else { title = 'НИЧЬЯ'; sub = 'мир, дружба, глинтвейн'; }
   if (w) {
@@ -471,6 +597,7 @@ function updHud() {
   $('#who').textContent = who;
   status(game.in_check() ? 'шах!' : '');
   $('#undo').style.display = mode === 'ai' || mode === 'hot' ? '' : 'none';
+  $('#hintBtn').style.display = coachFor(mode === 'ai' ? mySide : game.turn()) ? '' : 'none';
 }
 function show(id) { document.querySelectorAll('.panel').forEach(p => p.classList.toggle('on', p.id === id)); }
 function hideAll() { document.querySelectorAll('.panel').forEach(p => p.classList.remove('on')); }
@@ -482,8 +609,10 @@ function startGame(m, opts = {}) {
   if (m === 'ai') { mySide = opts.side || 'w'; level = opts.level ?? level; }
   Object.assign(goal, { tx: 0, ty: .2, tz: .4 });
   setView(m === 'hot' ? game.turn() : mySide);
+  hintMove = null; hintM.visible = false; hanging = []; hintCache = null; coachHide();
   updHud();
   if (m === 'ai' && game.turn() !== mySide) setTimeout(aiTurn, 600);
+  if (coachFor(m === 'ai' ? mySide : 'w') && !SET.coachSeen) { SET.coachSeen = true; saveSet(); setTimeout(() => coachSay('я тренер. подсвечу, если зевнёшь фигуру, а по кнопке «подсказка» покажу хороший ход. выключить — в настройках', 7000), 900); }
 }
 function toMenu() {
   mode = 'title'; auto = true; chain = Promise.resolve(); busy = false; inCut = false; skip = false; cine.k = 0; story = null;
@@ -501,7 +630,9 @@ bind('#hot', () => startGame('hot'));
 bind('#menuBtn', () => { if (mode === 'online' && conn) conn.send({ t: 'bye' }); if (mode === 'online') closeRelay(); toMenu(); });
 bind('#viewBtn', () => { const seq = ['w', 'side', 'b', 'side']; viewI = (viewI + 1) % 4; setView(seq[viewI]); });
 bind('#topBtn', () => top ? setView(mode === 'hot' ? game.turn() : mySide) : setView('top'));
-bind('#undo', () => { if (busy) return; if (mode === 'ai') { game.undo(); if (game.turn() !== mySide) game.undo(); } else game.undo(); rebuild(); updHud(); viewForTurn(); });
+bind('#undo', () => { if (busy) return; if (mode === 'ai') { game.undo(); if (game.turn() !== mySide) game.undo(); } else game.undo(); hintMove = null; hintM.visible = false; coachHide(); rebuild(); updHud(); viewForTurn(); refreshHanging(); });
+bind('#hintBtn', () => giveHint());
+bind('#miniBtn', () => { SET.mini = !SET.mini; saveSet(); });
 bind('#again', () => { if (mode === 'online') { conn && conn.send({ t: 'again' }); startGame('online'); return; } startGame(mode, { level, side: mySide }); });
 bind('#endMenu', () => toMenu());
 let viewI = 0;
@@ -513,6 +644,7 @@ function renderSet() {
   t('#sCrt', SET.crt, 'старый телевизор: ' + (SET.crt ? 'да' : 'нет'));
   t('#sSharp', true, 'пиксели: ' + (SET.sharp === 240 ? 'крупные' : 'помельче'));
   t('#sScenes', SET.scenes, 'сценки взятий: ' + (SET.scenes ? 'да' : 'нет'));
+  t('#sCoach', SET.coach, 'тренер для начинашек: ' + (SET.coach ? 'да' : 'нет'));
   t('#sFlip', SET.flip, 'вдвоём доска поворачивается: ' + (SET.flip ? 'да' : 'нет'));
   t('#sMusic', SET.music, 'музыка: ' + (SET.music ? 'да' : 'нет'));
   t('#sSfx', SET.sfx, 'звуки: ' + (SET.sfx ? 'да' : 'нет'));
@@ -523,6 +655,7 @@ tog('#sCrt', () => SET.crt = !SET.crt);
 tog('#sSharp', () => SET.sharp = SET.sharp === 240 ? 360 : 240);
 tog('#sScenes', () => SET.scenes = !SET.scenes);
 tog('#sFlip', () => SET.flip = !SET.flip);
+tog('#sCoach', () => SET.coach = !SET.coach);
 tog('#sMusic', () => SET.music = !SET.music);
 tog('#sSfx', () => SET.sfx = !SET.sfx);
 renderSet();
@@ -636,7 +769,7 @@ function storyEnd(won) { if (won) storyWin(); else setTimeout(async () => { awai
 async function storyWin() {
   if (!story || story.done) return; story.done = true; story.active = false;
   await new Promise(r => setTimeout(r, 900));
-  sfx('win'); stars(V(0, 2, 0), 24);
+  sfx('win'); stars(V(0, 2, 0), 24); pop(pickOne(CRY), C.malina);
   if (progress() <= story.i) LS.set('rcStory', story.i + 1);
   await say(story.ch.outro);
   if (story.i + 1 < CHAPTERS.length) { startChapter(story.i + 1); }
@@ -672,40 +805,78 @@ rebuild();
 
 
 // ---------- схема доски (2D, в углу) ----------
-const SPR = {
-  p: ['............', '............', '.....##.....', '....####....', '....####....', '.....##.....', '....####....', '.....##.....', '....####....', '...######...', '..########..', '............'],
-  r: ['............', '..##.##.##..', '..##.##.##..', '..########..', '...######...', '...######...', '...######...', '...######...', '...######...', '..########..', '..########..', '............'],
-  n: ['............', '.....#......', '....####....', '...######...', '..###.####..', '..#######...', '.....####...', '....#####...', '....#####...', '...######...', '..########..', '............'],
-  b: ['.....##.....', '....####....', '....##.#....', '...##.###...', '...######...', '...######...', '....####....', '.....##.....', '....####....', '...######...', '..########..', '............'],
-  q: ['............', '..#..##..#..', '..#.####.#..', '..########..', '...######...', '...######...', '....####....', '.....##.....', '....####....', '...######...', '..########..', '............'],
-  k: ['.....##.....', '....####....', '.....##.....', '...######...', '..########..', '..########..', '...######...', '....####....', '.....##.....', '....####....', '...######...', '..########..'],
+// фигуры lichess (cburnett, Colin M.L. Burnett, GPLv2+)
+const PIECE_URL = {
+  wp: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxwYXRoIGZpbGw9IiNmZmYiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2Utd2lkdGg9IjEuNSIgZD0iTTIyLjUgOWMtMi4yMSAwLTQgMS43OS00IDQgMCAuODkuMjkgMS43MS43OCAyLjM4QzE3LjMzIDE2LjUgMTYgMTguNTkgMTYgMjFjMCAyLjAzLjk0IDMuODQgMi40MSA1LjAzLTMgMS4wNi03LjQxIDUuNTUtNy40MSAxMy40N2gyM2MwLTcuOTItNC40MS0xMi40MS03LjQxLTEzLjQ3IDEuNDctMS4xOSAyLjQxLTMgMi40MS01LjAzIDAtMi40MS0xLjMzLTQuNS0zLjI4LTUuNjIuNDktLjY3Ljc4LTEuNDkuNzgtMi4zOCAwLTIuMjEtMS43OS00LTQtNHoiLz48L3N2Zz4=', wn: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGw9Im5vbmUiIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48cGF0aCBmaWxsPSIjZmZmIiBkPSJNMjIgMTBjMTAuNSAxIDE2LjUgOCAxNiAyOUgxNWMwLTkgMTAtNi41IDgtMjEiLz48cGF0aCBmaWxsPSIjZmZmIiBkPSJNMjQgMThjLjM4IDIuOTEtNS41NSA3LjM3LTggOS0zIDItMi44MiA0LjM0LTUgNC0xLjA0Mi0uOTQgMS40MS0zLjA0IDAtMy0xIDAgLjE5IDEuMjMtMSAyLTEgMC00LjAwMyAxLTQtNCAwLTIgNi0xMiA2LTEyczEuODktMS45IDItMy41Yy0uNzMtLjk5NC0uNS0yLS41LTMgMS0xIDMgMi41IDMgMi41aDJzLjc4LTEuOTkyIDIuNS0zYzEgMCAxIDMgMSAzIi8+PHBhdGggZmlsbD0iIzAwMCIgZD0iTTkuNSAyNS41YS41LjUgMCAxIDEtMSAwIC41LjUgMCAxIDEgMSAwbTUuNDMzLTkuNzVhLjUgMS41IDMwIDEgMS0uODY2LS41LjUgMS41IDMwIDEgMSAuODY2LjUiLz48L2c+PC9zdmc+', wb: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGw9Im5vbmUiIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48ZyBmaWxsPSIjZmZmIiBzdHJva2UtbGluZWNhcD0iYnV0dCI+PHBhdGggZD0iTTkgMzZjMy4zOS0uOTcgMTAuMTEuNDMgMTMuNS0yIDMuMzkgMi40MyAxMC4xMSAxLjAzIDEzLjUgMiAwIDAgMS42NS41NCAzIDItLjY4Ljk3LTEuNjUuOTktMyAuNS0zLjM5LS45Ny0xMC4xMS40Ni0xMy41LTEtMy4zOSAxLjQ2LTEwLjExLjAzLTEzLjUgMS0xLjM1LjQ5LTIuMzIuNDctMy0uNSAxLjM1LTEuOTQgMy0yIDMtMnoiLz48cGF0aCBkPSJNMTUgMzJjMi41IDIuNSAxMi41IDIuNSAxNSAwIC41LTEuNSAwLTIgMC0yIDAtMi41LTIuNS00LTIuNS00IDUuNS0xLjUgNi0xMS41LTUtMTUuNS0xMSA0LTEwLjUgMTQtNSAxNS41IDAgMC0yLjUgMS41LTIuNSA0IDAgMC0uNS41IDAgMnoiLz48cGF0aCBkPSJNMjUgOGEyLjUgMi41IDAgMSAxLTUgMCAyLjUgMi41IDAgMSAxIDUgMHoiLz48L2c+PHBhdGggc3Ryb2tlLWxpbmVqb2luPSJtaXRlciIgZD0iTTE3LjUgMjZoMTBNMTUgMzBoMTVtLTcuNS0xNC41djVNMjAgMThoNSIvPjwvZz48L3N2Zz4=', wr: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGw9IiNmZmYiIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48cGF0aCBzdHJva2UtbGluZWNhcD0iYnV0dCIgZD0iTTkgMzloMjd2LTNIOXptMy0zdi00aDIxdjR6bS0xLTIyVjloNHYyaDVWOWg1djJoNVY5aDR2NSIvPjxwYXRoIGQ9Im0zNCAxNC0zIDNIMTRsLTMtMyIvPjxwYXRoIHN0cm9rZS1saW5lY2FwPSJidXR0IiBzdHJva2UtbGluZWpvaW49Im1pdGVyIiBkPSJNMzEgMTd2MTIuNUgxNFYxNyIvPjxwYXRoIGQ9Im0zMSAyOS41IDEuNSAyLjVoLTIwbDEuNS0yLjUiLz48cGF0aCBmaWxsPSJub25lIiBzdHJva2UtbGluZWpvaW49Im1pdGVyIiBkPSJNMTEgMTRoMjMiLz48L2c+PC9zdmc+', wq: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGw9IiNmZmYiIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48cGF0aCBkPSJNOCAxMmEyIDIgMCAxIDEtNCAwIDIgMiAwIDEgMSA0IDBtMTYuNS00LjVhMiAyIDAgMSAxLTQgMCAyIDIgMCAxIDEgNCAwTTQxIDEyYTIgMiAwIDEgMS00IDAgMiAyIDAgMSAxIDQgME0xNiA4LjVhMiAyIDAgMSAxLTQgMCAyIDIgMCAxIDEgNCAwTTMzIDlhMiAyIDAgMSAxLTQgMCAyIDIgMCAxIDEgNCAwIi8+PHBhdGggc3Ryb2tlLWxpbmVjYXA9ImJ1dHQiIGQ9Ik05IDI2YzguNS0xLjUgMjEtMS41IDI3IDBsMi0xMi03IDExVjExbC01LjUgMTMuNS0zLTE1LTMgMTUtNS41LTE0VjI1TDcgMTR6Ii8+PHBhdGggc3Ryb2tlLWxpbmVjYXA9ImJ1dHQiIGQ9Ik05IDI2YzAgMiAxLjUgMiAyLjUgNCAxIDEuNSAxIDEgLjUgMy41LTEuNSAxLTEuNSAyLjUtMS41IDIuNS0xLjUgMS41LjUgMi41LjUgMi41IDYuNSAxIDE2LjUgMSAyMyAwIDAgMCAxLjUtMSAwLTIuNSAwIDAgLjUtMS41LTEtMi41LS41LTIuNS0uNS0yIC41LTMuNSAxLTIgMi41LTIgMi41LTQtOC41LTEuNS0xOC41LTEuNS0yNyAweiIvPjxwYXRoIGZpbGw9Im5vbmUiIGQ9Ik0xMS41IDMwYzMuNS0xIDE4LjUtMSAyMiAwTTEyIDMzLjVjNi0xIDE1LTEgMjEgMCIvPjwvZz48L3N2Zz4=', wk: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgdmlld0JveD0iMCAwIDQ1IDQ1Ij48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjEuNSI+PHBhdGggc3Ryb2tlLWxpbmVqb2luPSJtaXRlciIgZD0iTTIyLjUgMTEuNjNWNk0yMCA4aDUiLz48cGF0aCBmaWxsPSIjZmZmIiBzdHJva2UtbGluZWNhcD0iYnV0dCIgc3Ryb2tlLWxpbmVqb2luPSJtaXRlciIgZD0iTTIyLjUgMjVzNC41LTcuNSAzLTEwLjVjMCAwLTEtMi41LTMtMi41cy0zIDIuNS0zIDIuNWMtMS41IDMgMyAxMC41IDMgMTAuNSIvPjxwYXRoIGZpbGw9IiNmZmYiIGQ9Ik0xMS41IDM3YzUuNSAzLjUgMTUuNSAzLjUgMjEgMHYtN3M5LTQuNSA2LTEwLjVjLTQtNi41LTEzLjUtMy41LTE2IDRWMjd2LTMuNWMtMy41LTcuNS0xMy0xMC41LTE2LTQtMyA2IDUgMTAgNSAxMHoiLz48cGF0aCBkPSJNMTEuNSAzMGM1LjUtMyAxNS41LTMgMjEgMG0tMjEgMy41YzUuNS0zIDE1LjUtMyAyMSAwbS0yMSAzLjVjNS41LTMgMTUuNS0zIDIxIDAiLz48L2c+PC9zdmc+',
+  bp: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxwYXRoIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2Utd2lkdGg9IjEuNSIgZD0iTTIyLjUgOWE0IDQgMCAwIDAtMy4yMiA2LjM4IDYuNDggNi40OCAwIDAgMC0uODcgMTAuNjVjLTMgMS4wNi03LjQxIDUuNTUtNy40MSAxMy40N2gyM2MwLTcuOTItNC40MS0xMi40MS03LjQxLTEzLjQ3YTYuNDYgNi40NiAwIDAgMC0uODctMTAuNjVBNC4wMSA0LjAxIDAgMCAwIDIyLjUgOXoiLz48L3N2Zz4=', bn: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGw9Im5vbmUiIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48cGF0aCBmaWxsPSIjMDAwIiBkPSJNMjIgMTBjMTAuNSAxIDE2LjUgOCAxNiAyOUgxNWMwLTkgMTAtNi41IDgtMjEiLz48cGF0aCBmaWxsPSIjMDAwIiBkPSJNMjQgMThjLjM4IDIuOTEtNS41NSA3LjM3LTggOS0zIDItMi44MiA0LjM0LTUgNC0xLjA0LS45NCAxLjQxLTMuMDQgMC0zLTEgMCAuMTkgMS4yMy0xIDItMSAwLTQgMS00LTQgMC0yIDYtMTIgNi0xMnMxLjg5LTEuOSAyLTMuNWMtLjczLTEtLjUtMi0uNS0zIDEtMSAzIDIuNSAzIDIuNWgycy43OC0yIDIuNS0zYzEgMCAxIDMgMSAzIi8+PHBhdGggZmlsbD0iI2VjZWNlYyIgc3Ryb2tlPSIjZWNlY2VjIiBkPSJNOS41IDI1LjVhLjUuNSAwIDEgMS0xIDAgLjUuNSAwIDEgMSAxIDBtNS40My05Ljc1YS41IDEuNSAzMCAxIDEtLjg2LS41LjUgMS41IDMwIDEgMSAuODYuNSIvPjxwYXRoIGZpbGw9IiNlY2VjZWMiIHN0cm9rZT0ibm9uZSIgZD0ibTI0LjU1IDEwLjQtLjQ1IDEuNDUuNS4xNWMzLjE1IDEgNS42NSAyLjQ5IDcuOSA2Ljc1UzM1Ljc1IDI5LjA2IDM1LjI1IDM5bC0uMDUuNWgyLjI1bC4wNS0uNWMuNS0xMC4wNi0uODgtMTYuODUtMy4yNS0yMS4zNHMtNS43OS02LjY0LTkuMTktNy4xNnoiLz48L2c+PC9zdmc+', bb: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGw9Im5vbmUiIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48ZyBmaWxsPSIjMDAwIiBzdHJva2UtbGluZWNhcD0iYnV0dCI+PHBhdGggZD0iTTkgMzZjMy40LTEgMTAuMS40IDEzLjUtMiAzLjQgMi40IDEwLjEgMSAxMy41IDIgMCAwIDEuNi41IDMgMi0uNyAxLTEuNiAxLTMgLjUtMy40LTEtMTAuMS41LTEzLjUtMS0zLjQgMS41LTEwLjEgMC0xMy41IDEtMS40LjUtMi4zLjUtMy0uNSAxLjQtMiAzLTIgMy0yeiIvPjxwYXRoIGQ9Ik0xNSAzMmMyLjUgMi41IDEyLjUgMi41IDE1IDAgLjUtMS41IDAtMiAwLTIgMC0yLjUtMi41LTQtMi41LTQgNS41LTEuNSA2LTExLjUtNS0xNS41LTExIDQtMTAuNSAxNC01IDE1LjUgMCAwLTIuNSAxLjUtMi41IDQgMCAwLS41LjUgMCAyeiIvPjxwYXRoIGQ9Ik0yNSA4YTIuNSAyLjUgMCAxIDEtNSAwIDIuNSAyLjUgMCAxIDEgNSAweiIvPjwvZz48cGF0aCBzdHJva2U9IiNlY2VjZWMiIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiIGQ9Ik0xNy41IDI2aDEwTTE1IDMwaDE1bS03LjUtMTQuNXY1TTIwIDE4aDUiLz48L2c+PC9zdmc+', br: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48cGF0aCBzdHJva2UtbGluZWNhcD0iYnV0dCIgZD0iTTkgMzloMjd2LTNIOXptMy41LTcgMS41LTIuNWgxN2wxLjUgMi41em0tLjUgNHYtNGgyMXY0eiIvPjxwYXRoIHN0cm9rZS1saW5lY2FwPSJidXR0IiBzdHJva2UtbGluZWpvaW49Im1pdGVyIiBkPSJNMTQgMjkuNXYtMTNoMTd2MTN6Ii8+PHBhdGggc3Ryb2tlLWxpbmVjYXA9ImJ1dHQiIGQ9Ik0xNCAxNi41IDExIDE0aDIzbC0zIDIuNXpNMTEgMTRWOWg0djJoNVY5aDV2Mmg1VjloNHY1eiIvPjxwYXRoIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2VjZWNlYyIgc3Ryb2tlLWxpbmVqb2luPSJtaXRlciIgc3Ryb2tlLXdpZHRoPSIxIiBkPSJNMTIgMzUuNWgyMW0tMjAtNGgxOW0tMTgtMmgxN20tMTctMTNoMTdNMTEgMTRoMjMiLz48L2c+PC9zdmc+', bq: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgd2lkdGg9IjQ1IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgNDUgNDUiPjxnIGZpbGwtcnVsZT0iZXZlbm9kZCIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41Ij48ZyBzdHJva2U9Im5vbmUiPjxjaXJjbGUgY3g9IjYiIGN5PSIxMiIgcj0iMi43NSIvPjxjaXJjbGUgY3g9IjE0IiBjeT0iOSIgcj0iMi43NSIvPjxjaXJjbGUgY3g9IjIyLjUiIGN5PSI4IiByPSIyLjc1Ii8+PGNpcmNsZSBjeD0iMzEiIGN5PSI5IiByPSIyLjc1Ii8+PGNpcmNsZSBjeD0iMzkiIGN5PSIxMiIgcj0iMi43NSIvPjwvZz48cGF0aCBzdHJva2UtbGluZWNhcD0iYnV0dCIgZD0iTTkgMjZjOC41LTEuNSAyMS0xLjUgMjcgMGwyLjUtMTIuNUwzMSAyNWwtLjMtMTQuMS01LjIgMTMuNi0zLTE0LjUtMyAxNC41LTUuMi0xMy42TDE0IDI1IDYuNSAxMy41eiIvPjxwYXRoIHN0cm9rZS1saW5lY2FwPSJidXR0IiBkPSJNOSAyNmMwIDIgMS41IDIgMi41IDQgMSAxLjUgMSAxIC41IDMuNS0xLjUgMS0xLjUgMi41LTEuNSAyLjUtMS41IDEuNS41IDIuNS41IDIuNSA2LjUgMSAxNi41IDEgMjMgMCAwIDAgMS41LTEgMC0yLjUgMCAwIC41LTEuNS0xLTIuNS0uNS0yLjUtLjUtMiAuNS0zLjUgMS0yIDIuNS0yIDIuNS00LTguNS0xLjUtMTguNS0xLjUtMjcgMHoiLz48cGF0aCBmaWxsPSJub25lIiBzdHJva2UtbGluZWNhcD0iYnV0dCIgZD0iTTExIDM4LjVhMzUgMzUgMSAwIDAgMjMgMCIvPjxwYXRoIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2VjZWNlYyIgZD0iTTExIDI5YTM1IDM1IDEgMCAxIDIzIDBtLTIxLjUgMi41aDIwbS0yMSAzYTM1IDM1IDEgMCAwIDIyIDBtLTIzIDNhMzUgMzUgMSAwIDAgMjQgMCIvPjwvZz48L3N2Zz4=', bk: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJjb2xvci1zY2hlbWU6bGlnaHQgb25seSIgdmlld0JveD0iMCAwIDQ1IDQ1Ij48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjEuNSI+PHBhdGggc3Ryb2tlLWxpbmVqb2luPSJtaXRlciIgZD0iTTIyLjUgMTEuNlY2Ii8+PHBhdGggZmlsbD0iIzAwMCIgc3Ryb2tlLWxpbmVjYXA9ImJ1dHQiIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiIGQ9Ik0yMi41IDI1czQuNS03LjUgMy0xMC41YzAgMC0xLTIuNS0zLTIuNXMtMyAyLjUtMyAyLjVjLTEuNSAzIDMgMTAuNSAzIDEwLjUiLz48cGF0aCBmaWxsPSIjMDAwIiBkPSJNMTEuNSAzN2EyMi4zIDIyLjMgMCAwIDAgMjEgMHYtN3M5LTQuNSA2LTEwLjVjLTQtNi41LTEzLjUtMy41LTE2IDRWMjd2LTMuNWMtMy41LTcuNS0xMy0xMC41LTE2LTQtMyA2IDUgMTAgNSAxMHoiLz48cGF0aCBzdHJva2UtbGluZWpvaW49Im1pdGVyIiBkPSJNMjAgOGg1Ii8+PHBhdGggc3Ryb2tlPSIjZWNlY2VjIiBkPSJNMzIgMjkuNXM4LjUtNCA2LTkuN0MzNC4xIDE0IDI1IDE4IDIyLjUgMjQuNnYyLjEtMi4xQzIwIDE4IDkuOSAxNCA3IDE5LjljLTIuNSA1LjYgNC44IDkgNC44IDkiLz48cGF0aCBzdHJva2U9IiNlY2VjZWMiIGQ9Ik0xMS41IDMwYzUuNS0zIDE1LjUtMyAyMSAwbS0yMSAzLjVjNS41LTMgMTUuNS0zIDIxIDBtLTIxIDMuNWM1LjUtMyAxNS41LTMgMjEgMCIvPjwvZz48L3N2Zz4=',
 };
+const PIMG = {}; for (const k in PIECE_URL) { const im = new Image(); im.src = PIECE_URL[k]; PIMG[k] = im; }
 const miniEl = $('#mini'), mc = $('#miniC'), mg = mc.getContext('2d');
-function sprite(type, color, ox, oy) {
-  const a = SPR[type], fill = color === 'w' ? '#ffffff' : C.bak, line = color === 'w' ? C.bak : '#ffffff';
-  const on = (x, y) => y >= 0 && y < 12 && x >= 0 && x < 12 && a[y][x] === '#';
-  mg.fillStyle = line;
-  for (let y = -1; y < 13; y++) for (let x = -1; x < 13; x++) if (!on(x, y) && (on(x - 1, y) || on(x + 1, y) || on(x, y - 1) || on(x, y + 1))) mg.fillRect(ox + x, oy + y, 1, 1);
-  mg.fillStyle = fill;
-  for (let y = 0; y < 12; y++) for (let x = 0; x < 12; x++) if (on(x, y)) mg.fillRect(ox + x, oy + y, 1, 1);
-}
-let miniRot = 0, miniLegal = [];
+const SQ_PX = 60; mc.width = mc.height = SQ_PX * 8;
+let miniRot = 0, miniLegal = [], hintMove = null;
 const toCell = (sq, q) => { const x = sq.charCodeAt(0) - 97 - 3.5, z = 3.5 - (+sq[1] - 1), c = Math.cos(q), s = Math.sin(q); return [Math.round(x * c - z * s + 3.5), Math.round(x * s + z * c + 3.5)]; };
 function fromCell(col, row) { const q = miniRot * Math.PI / 2, c = Math.cos(q), s = Math.sin(q), sx = col - 3.5, sy = row - 3.5; return sqAt(V(sx * c + sy * s, 0, -sx * s + sy * c)); }
+
+// материал: у кого больше и чего
+const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+function material() {
+  const cnt = { w: { p: 0, n: 0, b: 0, r: 0, q: 0 }, b: { p: 0, n: 0, b: 0, r: 0, q: 0 } };
+  for (const row of game.board()) for (const p of row) if (p && p.type !== 'k') cnt[p.color][p.type]++;
+  const out = { w: { list: [], score: 0 }, b: { list: [], score: 0 } };
+  let sw = 0, sb = 0;
+  for (const t of ['q', 'r', 'b', 'n', 'p']) {
+    sw += cnt.w[t] * VAL[t]; sb += cnt.b[t] * VAL[t];
+    const d = cnt.w[t] - cnt.b[t];
+    for (let i = 0; i < Math.abs(d); i++) (d > 0 ? out.w : out.b).list.push((d > 0 ? 'b' : 'w') + t); // съеденные у соперника
+  }
+  out.w.score = sw - sb; out.b.score = sb - sw;
+  return out;
+}
+let matKey = '';
+function drawMaterial(bottomColor) {
+  const m = material(), top = bottomColor === 'w' ? 'b' : 'w';
+  const key = JSON.stringify(m) + bottomColor; if (key === matKey) return; matKey = key;
+  const row = (el, c) => { const x = m[c]; el.innerHTML = `<span class="who">${SIDE[c]}</span>` + x.list.map(k => `<img src="${PIECE_URL[k]}" alt="">`).join('') + (x.score > 0 ? `<b>+${x.score}</b>` : ''); };
+  row($('#matTop'), top); row($('#matBot'), bottomColor);
+  const lead = m.w.score > 0 ? `материал: лагерь +${m.w.score}` : m.b.score > 0 ? `материал: орги +${m.b.score}` : 'материал: поровну';
+  $('#matInfo').textContent = lead;
+}
 function drawMini(t) {
   const show = SET.mini && mode !== 'title';
-  miniEl.classList.toggle('on', show); if (!show) return;
+  miniEl.classList.toggle('on', show);
+  if (mode === 'title') return;
   miniRot = ((Math.round(orbit.th / (Math.PI / 2)) % 4) + 4) % 4;
-  const q = miniRot * Math.PI / 2;
-  for (let f = 0; f < 8; f++) for (let r = 0; r < 8; r++) { const sq = 'abcdefgh'[f] + (r + 1), [cx, cy] = toCell(sq, q); mg.fillStyle = (f + r) % 2 ? '#ffffff' : C.malina; mg.fillRect(cx * 16, cy * 16, 16, 16); }
+  const q = miniRot * Math.PI / 2, S = SQ_PX;
+  drawMaterial(toCell('e1', q)[1] >= toCell('e8', q)[1] ? 'w' : 'b');
+  if (!show) return;
+  const cell = sq => { const [cx, cy] = toCell(sq, q); return [cx * S, cy * S]; };
+  for (let f = 0; f < 8; f++) for (let r = 0; r < 8; r++) { const [x, y] = cell('abcdefgh'[f] + (r + 1)); mg.fillStyle = (f + r) % 2 ? '#fff6f8' : '#ff7a99'; mg.fillRect(x, y, S, S); }
   const h = game.history({ verbose: true }), l = h[h.length - 1];
-  if (l) { mg.fillStyle = 'rgba(255,230,107,.7)'; for (const sq of [l.from, l.to]) { const [cx, cy] = toCell(sq, q); mg.fillRect(cx * 16, cy * 16, 16, 16); } }
-  const frameSq = (sq, col, w = 2) => { const [cx, cy] = toCell(sq, q); mg.fillStyle = col; mg.fillRect(cx * 16, cy * 16, 16, w); mg.fillRect(cx * 16, cy * 16 + 16 - w, 16, w); mg.fillRect(cx * 16, cy * 16, w, 16); mg.fillRect(cx * 16 + 16 - w, cy * 16, w, 16); };
-  if (game.in_check()) { const b = game.board(); for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) { const p = b[r][f]; if (p && p.type === 'k' && p.color === game.turn() && Math.sin(t * 8) > -.3) frameSq('abcdefgh'[f] + (8 - r), C.bak, 2); } }
-  if (selected) frameSq(selected, C.myata, 2);
+  if (l) { mg.fillStyle = 'rgba(255,230,107,.75)'; for (const sq of [l.from, l.to]) { const [x, y] = cell(sq); mg.fillRect(x, y, S, S); } }
+  const frameSq = (sq, col, w = 5) => { const [x, y] = cell(sq); mg.strokeStyle = col; mg.lineWidth = w; mg.strokeRect(x + w / 2, y + w / 2, S - w, S - w); };
+  if (game.in_check()) { const b = game.board(); for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) { const p = b[r][f]; if (p && p.type === 'k' && p.color === game.turn()) { const [x, y] = cell('abcdefgh'[f] + (8 - r)); const g = mg.createRadialGradient(x + S / 2, y + S / 2, 2, x + S / 2, y + S / 2, S * .7); g.addColorStop(0, 'rgba(255,0,40,.95)'); g.addColorStop(1, 'rgba(255,0,40,0)'); mg.fillStyle = g; mg.fillRect(x, y, S, S); } } }
+  if (selected) frameSq(selected, C.myata);
+  // висящие фигуры (тренер)
+  for (const sq of hanging) { const [x, y] = cell(sq); mg.fillStyle = C.bak; mg.beginPath(); mg.arc(x + S - 11, y + 11, 9, 0, 7); mg.fill(); mg.fillStyle = C.limonad; mg.font = 'bold 14px "IBM Plex Mono", monospace'; mg.textAlign = 'center'; mg.textBaseline = 'middle'; mg.fillText('!', x + S - 11, y + 12); }
   const b = game.board();
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) { const p = b[r][f]; if (!p) continue; const [cx, cy] = toCell('abcdefgh'[f] + (8 - r), q); sprite(p.type, p.color, cx * 16 + 2, cy * 16 + 2); }
-  if (selected) for (const m of miniLegal) { const [cx, cy] = toCell(m.to, q); if (m.captured) frameSq(m.to, C.myata, 2); else { mg.fillStyle = C.myata; mg.fillRect(cx * 16 + 6, cy * 16 + 6, 4, 4); mg.fillStyle = C.bak; mg.fillRect(cx * 16 + 6, cy * 16 + 10, 4, 1); } }
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) { const p = b[r][f]; if (!p) continue; const im = PIMG[p.color + p.type]; if (!im.complete) continue; const [x, y] = cell('abcdefgh'[f] + (8 - r)); mg.drawImage(im, x, y, S, S); }
+  if (selected) for (const m of miniLegal) { const [x, y] = cell(m.to); mg.fillStyle = 'rgba(20,85,30,.5)'; if (m.captured) { mg.beginPath(); mg.arc(x + S / 2, y + S / 2, S / 2 - 2, 0, 7); mg.arc(x + S / 2, y + S / 2, S / 2 - 8, 0, 7, true); mg.fill(); } else { mg.beginPath(); mg.arc(x + S / 2, y + S / 2, S * .14, 0, 7); mg.fill(); } }
+  // координаты, как на lichess
+  mg.font = '600 11px "IBM Plex Mono", monospace'; mg.textBaseline = 'alphabetic';
+  for (let i = 0; i < 8; i++) {
+    const fsq = 'abcdefgh'[i], bottomRow = [...'12345678'].map(r => fsq + r).find(sq => toCell(sq, q)[1] === 7);
+    if (bottomRow) { const [x, y] = cell(bottomRow); mg.fillStyle = ((i + +bottomRow[1] - 1) % 2) ? '#ff4f7b' : '#fff6f8'; mg.textAlign = 'right'; mg.fillText(fsq, x + S - 3, y + S - 3); }
+    const rsq = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(f => f + (i + 1)).find(sq => toCell(sq, q)[0] === 0);
+    if (rsq) { const [x, y] = cell(rsq); mg.fillStyle = ((rsq.charCodeAt(0) - 97 + i) % 2) ? '#ff4f7b' : '#fff6f8'; mg.textAlign = 'left'; mg.fillText(String(i + 1), x + 3, y + 13); }
+  }
+  // стрелка подсказки
+  if (hintMove) {
+    const [x1, y1] = cell(hintMove.from), [x2, y2] = cell(hintMove.to);
+    const ax = x1 + S / 2, ay = y1 + S / 2, bx = x2 + S / 2, by = y2 + S / 2, an = Math.atan2(by - ay, bx - ax);
+    mg.strokeStyle = 'rgba(47,208,138,.85)'; mg.fillStyle = 'rgba(47,208,138,.85)'; mg.lineWidth = 10; mg.lineCap = 'round';
+    mg.beginPath(); mg.moveTo(ax, ay); mg.lineTo(bx - Math.cos(an) * 18, by - Math.sin(an) * 18); mg.stroke();
+    mg.beginPath(); mg.moveTo(bx, by); mg.lineTo(bx - Math.cos(an - .5) * 26, by - Math.sin(an - .5) * 26); mg.lineTo(bx - Math.cos(an + .5) * 26, by - Math.sin(an + .5) * 26); mg.fill();
+  }
 }
 mc.addEventListener('pointerdown', e => {
   e.stopPropagation(); const r = mc.getBoundingClientRect();
@@ -713,7 +884,7 @@ mc.addEventListener('pointerdown', e => {
   if ($('#dialog').classList.contains('on')) return nextLine();
   tapSq(fromCell(col, row));
 });
-bind('#miniBtn', () => { SET.mini = !SET.mini; saveSet(); });
+
 
 // ---------- цикл ----------
 let last = performance.now();
