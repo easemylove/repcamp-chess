@@ -31,8 +31,11 @@ function noise(bus, t, dur, vol, f = 6000, q = 1, type = 'bandpass') {
 }
 
 // ---------- музыка ----------
-// Тональность ре минор → фа мажор, 96 bpm. Аккорды по тактам, мелодия в 16-х (0 = пауза).
-const BPM = 96, STEP = 60 / BPM / 4;
+// Три трека: menu (84 bpm, 16 тактов), game (96 bpm, 18 тактов), night (108 bpm, 16 тактов).
+// Каждый — набор тактов [аккорд, мелодия в 16-х (0 = пауза)] и функция play, которую зовёт планировщик.
+const mk = (chords, mels) => chords.map((c, i) => ({ c, m: mels[i] }));
+
+// ---- game: часть A (прежний материал, ре минор → фа мажор) ----
 const CH = [[50, 53, 57], [46, 50, 53], [48, 52, 55], [45, 49, 52], [50, 53, 57], [46, 50, 53], [43, 46, 50], [45, 49, 52]];
 const MEL_A = [
   [74, 0, 72, 0, 69, 0, 0, 72, 74, 0, 77, 0, 76, 0, 74, 0],
@@ -44,30 +47,201 @@ const MEL_A = [
   [79, 0, 77, 0, 74, 0, 70, 0, 74, 0, 72, 0, 70, 0, 0, 0],
   [69, 0, 0, 0, 0, 0, 73, 0, 76, 0, 0, 0, 81, 0, 0, 0],
 ];
+// часть B: соль минор → ми-бемоль → си-бемоль → фа, в конце доминанта (ля)
+const CH_B = [[55, 58, 62], [51, 55, 58], [46, 50, 53], [53, 57, 60], [55, 58, 62], [51, 55, 58], [48, 52, 55], [45, 49, 52]];
+const MEL_B = [
+  [70, 0, 0, 67, 0, 0, 70, 0, 74, 0, 0, 0, 72, 0, 70, 0],
+  [67, 0, 0, 0, 70, 0, 0, 0, 75, 0, 74, 0, 70, 0, 0, 0],
+  [74, 0, 0, 72, 0, 0, 70, 0, 77, 0, 0, 0, 74, 0, 0, 0],
+  [72, 0, 0, 0, 69, 0, 72, 0, 77, 0, 76, 0, 72, 0, 0, 0],
+  [70, 0, 74, 0, 77, 0, 0, 74, 70, 0, 0, 0, 67, 0, 0, 0],
+  [75, 0, 0, 74, 0, 0, 70, 0, 67, 0, 70, 0, 74, 0, 0, 0],
+  [72, 0, 76, 0, 79, 0, 0, 0, 76, 0, 72, 0, 67, 0, 0, 0],
+  [69, 0, 73, 0, 76, 0, 0, 0, 81, 0, 0, 0, 0, 0, 0, 0],
+];
+// связка из двух тактов: нисходящая гамма и ля-доминанта, чтобы вернуться в ре минор
+const CH_F = [[46, 50, 53], [45, 49, 52]];
+const MEL_F = [
+  [77, 0, 76, 0, 74, 0, 72, 0, 70, 0, 69, 0, 67, 0, 0, 0],
+  [73, 0, 0, 0, 69, 0, 0, 0, 76, 0, 0, 0, 73, 0, 0, 0],
+];
+const GAME_BARS = [...mk(CH, MEL_A), ...mk(CH_B, MEL_B), ...mk(CH_F, MEL_F)];
+
+function playGame(bus, bi, s, t, cyc, SD) {
+  const { c, m } = GAME_BARS[bi], n = m[s];
+  if (bi < 8) { // A — как раньше
+    if (s % 4 === 0) tone(bus, 'triangle', c[0] - 12 + (s === 8 ? 7 : 0), t, SD * 3.5, .35);
+    if (s % 2 === 0) tone(bus, 'square', c[(s / 2) % 3] + 12, t, SD * 1.6, .045);
+    if (n && cyc % 2 === 0) tone(bus, 'square', n, t, SD * 2.6, .07);
+    if (n && cyc % 2 === 1) { tone(bus, 'sine', n + 12, t, SD * 6, .12); tone(bus, 'sine', n + 24, t, SD * 3, .03); }
+    if (s % 4 === 2) noise(bus, t, .05, .06, 9000, 2);
+    if (s === 0 || s === 8) noise(bus, t, .12, .12, 180, 1, 'lowpass');
+    if (s % 8 === 4) noise(bus, t, .09, .1, 2500, 1.2);
+  } else if (bi < 16) { // B — шагающий бас, треугольная арпа вверх-вниз, мягкая мелодия
+    if (s % 8 === 0) tone(bus, 'triangle', c[0] - 12, t, SD * 7, .34);
+    if (s === 6 || s === 14) tone(bus, 'triangle', c[0] - 12 + 7, t, SD * 1.8, .2);
+    if (s % 2 === 0) tone(bus, 'triangle', c[[0, 1, 2, 1][(s / 2) % 4]] + 12, t, SD * 1.8, .08);
+    if (s % 4 === 2) tone(bus, 'square', c[2] + 12, t, SD * .8, .02);
+    if (n && cyc % 2 === 0) { tone(bus, 'triangle', n, t, SD * 3, .17); tone(bus, 'square', n, t, SD * 1.4, .03); }
+    if (n && cyc % 2 === 1) { tone(bus, 'sine', n + 12, t, SD * 5, .1); tone(bus, 'sine', n, t, SD * 4, .08); }
+    if (s % 4 === 2) noise(bus, t, .04, .05, 9000, 2);
+    if (s === 0 || s === 10) noise(bus, t, .12, .12, 180, 1, 'lowpass');
+    if (s === 4 || s === 12) noise(bus, t, .09, .09, 2500, 1.2);
+  } else { // связка: арпа как в A, мелодия колокольчиком, в последнем такте — нарастающая дробь
+    if (s % 4 === 0) tone(bus, 'triangle', c[0] - 12, t, SD * 3.5, .35);
+    if (s % 2 === 0) tone(bus, 'square', c[(s / 2) % 3] + 12, t, SD * 1.6, .045);
+    if (n) { tone(bus, 'sine', n + 12, t, SD * 4, .12); tone(bus, 'triangle', n, t, SD * 2.5, .09); }
+    if (s % 4 === 2) noise(bus, t, .05, .06, 9000, 2);
+    if (bi === 17 && s >= 8) noise(bus, t, .06, .05 + (s - 8) * .012, 3000, 1.2);
+    if (s === 0) noise(bus, t, .12, .12, 180, 1, 'lowpass');
+  }
+}
+
+// ---- menu: уютная колыбельная, до мажор / ля минор, колокольчики ----
+const C_ = [48, 52, 55], Am_ = [45, 48, 52], F_ = [53, 57, 60], G_ = [55, 59, 62], Em_ = [52, 55, 59], Dm_ = [50, 53, 57];
+const MENU_BARS = mk(
+  [C_, Am_, F_, G_, C_, Am_, F_, G_, F_, Em_, Dm_, G_, Am_, F_, G_, C_],
+  [
+    [76, 0, 0, 0, 79, 0, 0, 0, 76, 0, 72, 0, 0, 0, 0, 0],
+    [72, 0, 0, 0, 76, 0, 0, 0, 81, 0, 0, 0, 79, 0, 76, 0],
+    [77, 0, 0, 0, 76, 0, 0, 0, 72, 0, 0, 0, 69, 0, 0, 0],
+    [74, 0, 0, 0, 79, 0, 0, 0, 77, 0, 74, 0, 71, 0, 0, 0],
+    [76, 0, 0, 72, 0, 0, 79, 0, 0, 0, 84, 0, 0, 0, 79, 0],
+    [81, 0, 0, 0, 79, 0, 76, 0, 72, 0, 0, 0, 76, 0, 0, 0],
+    [77, 0, 0, 0, 81, 0, 0, 0, 79, 0, 77, 0, 76, 0, 0, 0],
+    [74, 0, 0, 0, 0, 0, 71, 0, 67, 0, 0, 0, 0, 0, 0, 0],
+    [81, 0, 0, 0, 77, 0, 0, 0, 72, 0, 0, 0, 77, 0, 0, 0],
+    [79, 0, 0, 0, 76, 0, 0, 0, 71, 0, 0, 0, 76, 0, 74, 0],
+    [77, 0, 0, 0, 74, 0, 0, 0, 69, 0, 0, 0, 74, 0, 77, 0],
+    [79, 0, 0, 0, 74, 0, 71, 0, 74, 0, 0, 0, 0, 0, 0, 0],
+    [72, 0, 76, 0, 81, 0, 0, 0, 84, 0, 0, 0, 81, 0, 0, 0],
+    [84, 0, 81, 0, 77, 0, 0, 0, 81, 0, 0, 0, 77, 0, 72, 0],
+    [79, 0, 77, 0, 74, 0, 71, 0, 74, 0, 0, 0, 77, 0, 0, 0],
+    [76, 0, 0, 0, 72, 0, 0, 0, 67, 0, 0, 0, 0, 0, 0, 0],
+  ]);
+
+function playMenu(bus, bi, s, t, cyc, SD) {
+  const { c, m } = MENU_BARS[bi], n = m[s];
+  if (s === 0) for (const p of c) tone(bus, 'sine', p, t, SD * 16, .045, 0, .25); // тёплая подушка
+  if (s === 0) tone(bus, 'triangle', c[0] - 12, t, SD * 7, .26);
+  if (s === 8) tone(bus, 'triangle', c[0] - 12 + 7, t, SD * 5, .16);
+  if (n) { // колокольчик: основной тон + обертоны
+    tone(bus, 'sine', n, t, SD * 7, .1);
+    tone(bus, 'sine', n + 12, t, SD * 3.5, .03);
+    tone(bus, 'sine', n + 19, t, SD * 1.6, .012);
+  }
+  if (s % 4 === 2) tone(bus, 'sine', c[(s >> 2) % 3] + 24 + (cyc % 2 ? 0 : 0), t, SD * 2, .022); // шкатулка
+  if (s === 0 || s === 8) noise(bus, t, .07, .025, 9000, 2, 'highpass'); // бубенцы
+}
+
+// ---- night: тёмный, редкий, 108 bpm, ре минор ----
+const Dm2 = [50, 53, 57], Bb2 = [46, 50, 53], Gm2 = [43, 46, 50], A2 = [45, 49, 52], Eb2 = [51, 55, 58];
+const NIGHT_BARS = mk(
+  [Dm2, Dm2, Bb2, Bb2, Gm2, Gm2, A2, A2, Bb2, Gm2, Eb2, A2, Bb2, Gm2, Eb2, A2],
+  [
+    [0, 0, 0, 0, 69, 0, 0, 0, 0, 0, 65, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 65, 0, 0, 0],
+    [0, 0, 70, 0, 0, 0, 0, 0, 0, 0, 69, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 65, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0],
+    [67, 0, 0, 0, 0, 0, 70, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 69, 0, 0, 0, 67, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 73, 0, 0, 0, 0, 0, 76, 0, 0, 0, 0, 0, 73, 0],
+    [0, 0, 0, 0, 69, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [74, 0, 0, 0, 0, 0, 72, 0, 0, 0, 0, 0, 70, 0, 0, 0],
+    [0, 0, 0, 0, 70, 0, 0, 0, 67, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 75, 0, 0, 0, 0, 0, 74, 0, 0, 0, 70, 0, 0, 0],
+    [0, 0, 0, 0, 73, 0, 0, 0, 0, 0, 76, 0, 0, 0, 0, 0],
+    [77, 0, 0, 0, 0, 0, 74, 0, 0, 0, 0, 0, 70, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 67, 0, 0, 0, 70, 0, 0, 0, 0, 0],
+    [75, 0, 0, 0, 0, 0, 74, 0, 0, 0, 70, 0, 0, 0, 67, 0],
+    [73, 0, 0, 0, 0, 0, 69, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  ]);
+
+function playNight(bus, bi, s, t, cyc, SD) {
+  const { c, m } = NIGHT_BARS[bi], n = m[s];
+  if (s === 0) { // низкий дрон: основной тон и квинта, дышит на весь такт
+    tone(bus, 'sine', c[0] - 12, t, SD * 17, .2, 0, .3);
+    tone(bus, 'sine', c[0] - 5, t, SD * 17, .05, 0, .4);
+  }
+  if (s === 0) { noise(bus, t, .12, .22, 120, 1, 'lowpass'); tone(bus, 'sine', 43, t, .16, .26, -12); } // сердцебиение
+  if (s === 3) { noise(bus, t, .09, .1, 120, 1, 'lowpass'); tone(bus, 'sine', 43, t, .12, .13, -12); }
+  if (n) { // редкие щипки
+    const up = cyc % 2 ? 12 : 0;
+    tone(bus, 'triangle', n + up, t, SD * 4, .12);
+    tone(bus, 'sine', n + 12 + up, t, SD * 2.5, .04);
+  }
+  if (s % 8 === 6) noise(bus, t, .04, .03, 7000, 2); // сухой тик
+  if (Math.random() < .1) noise(bus, t, .02, .03, 5000, 1, 'highpass'); // потрескивание свечи
+}
+
+const TRACKS = {
+  menu: { bpm: 84, bars: MENU_BARS, play: playMenu },
+  game: { bpm: 96, bars: GAME_BARS, play: playGame },
+  night: { bpm: 108, bars: NIGHT_BARS, play: playNight },
+};
+let wantTrack = 'menu', curName = null, cur = null, trackBus = null;
 let musicT = 0, step = 0, timer;
+
+export function setTrack(name) {
+  if (!TRACKS[name] || name === wantTrack) return;
+  wantTrack = name; // переключится на границе ближайшего такта
+}
+function switchTrack() {
+  // кроссфейд: старая шина гаснет, новая нарастает, ~0.3 с
+  const old = trackBus;
+  trackBus = ac.createGain(); trackBus.connect(musicBus);
+  trackBus.gain.setValueAtTime(0, musicT);
+  trackBus.gain.linearRampToValueAtTime(1, musicT + .3);
+  if (old) {
+    old.gain.cancelScheduledValues(musicT); old.gain.setValueAtTime(old.gain.value, musicT);
+    old.gain.linearRampToValueAtTime(0, musicT + .3);
+    setTimeout(() => { try { old.disconnect(); } catch (e) {} }, 2500);
+  }
+  cur = TRACKS[wantTrack]; curName = wantTrack; step = 0;
+}
 function startMusic() {
   musicT = ac.currentTime + .1; step = 0;
+  cur = null; curName = null; trackBus = null;
   clearInterval(timer);
   timer = setInterval(schedule, 40);
 }
 function schedule() {
   while (musicT < ac.currentTime + .2) {
-    const bar = Math.floor(step / 16) % 8, s = step % 16, ch = CH[bar];
-    const loop = Math.floor(step / 128);
-    // бас
-    if (s % 4 === 0) tone(musicBus, 'triangle', ch[0] - 12 + (s === 8 ? 7 : 0), musicT, STEP * 3.5, .35);
-    // арпеджио
-    if (s % 2 === 0) tone(musicBus, 'square', ch[(s / 2) % 3] + 12, musicT, STEP * 1.6, .045);
-    // мелодия (во втором проходе — на октаву выше и колокольчиком)
-    const n = MEL_A[bar][s];
-    if (n && loop % 2 === 0) tone(musicBus, 'square', n, musicT, STEP * 2.6, .07);
-    if (n && loop % 2 === 1) { tone(musicBus, 'sine', n + 12, musicT, STEP * 6, .12); tone(musicBus, 'sine', n + 24, musicT, STEP * 3, .03); }
-    // бубенцы и «хруст»
-    if (s % 4 === 2) noise(musicBus, musicT, .05, .06, 9000, 2);
-    if (s === 0 || s === 8) noise(musicBus, musicT, .12, .12, 180, 1, 'lowpass');
-    if (s % 8 === 4) noise(musicBus, musicT, .09, .1, 2500, 1.2);
-    musicT += STEP; step++;
+    if (!cur || (step % 16 === 0 && wantTrack !== curName)) switchTrack();
+    const SD = 60 / cur.bpm / 4, n = cur.bars.length;
+    const bi = Math.floor(step / 16) % n, s = step % 16, cyc = Math.floor(step / (16 * n));
+    cur.play(trackBus, bi, s, musicT, cyc, SD);
+    musicT += SD; step++;
   }
+}
+
+// ---------- голоса автора ----------
+const VOICES = ['sudaa', 'skaifom', 'chessikaif', 'oi'];
+const vBuf = {}, vState = {}; // state: 'loading' | 'ok' | 'fail'
+export function hasVoice(name) { return !!vBuf[name]; }
+export function preloadVoices(names = VOICES) {
+  if (!ac) return;
+  for (const n of names) {
+    if (!VOICES.includes(n) || vState[n]) continue;
+    vState[n] = 'loading';
+    fetch(`assets/voice/${n}.mp3`)
+      .then(res => res.ok ? res.arrayBuffer() : Promise.reject())
+      .then(ab => new Promise((ok, no) => ac.decodeAudioData(ab, ok, no)))
+      .then(buf => { vBuf[n] = buf; vState[n] = 'ok'; })
+      .catch(() => { vState[n] = 'fail'; });
+  }
+}
+// Играет, если файл уже декодирован (true). Иначе запускает ленивую загрузку один раз и возвращает false.
+export function voice(name) {
+  try {
+    if (!ac || !S.sfx || !VOICES.includes(name)) return false;
+    const b = vBuf[name];
+    if (!b) { preloadVoices([name]); return false; }
+    const src = ac.createBufferSource(); src.buffer = b;
+    const g = ac.createGain(); g.gain.value = 1;
+    src.connect(g); g.connect(sfxBus); src.start();
+    return true;
+  } catch (e) { return false; }
 }
 
 // ---------- звуки ----------
@@ -95,6 +269,8 @@ export function sfx(name, k = 1) {
     case 'lose': [72, 67, 64, 60].forEach((n, i) => tone(sfxBus, 'triangle', n, t + i * .2, .3, .2)); break;
     case 'pop': tone(sfxBus, 'square', 72, t, .08, .12, 12); break;
     case 'talk': tone(sfxBus, 'square', 70 + Math.random() * 10, t, .045, .045); break;
+    case 'tick': tone(sfxBus, 'square', 96, t, .02, .03); noise(sfxBus, t, .015, .06 * k, 3500, 4); break;
+    case 'flag': [76, 71, 64].forEach((n, i) => { tone(sfxBus, 'triangle', n, t + i * .15, .2, .2); tone(sfxBus, 'square', n, t + i * .15, .1, .04); }); break;
     case 'promo': [79, 83, 86, 91].forEach((n, i) => tone(sfxBus, 'sine', n, t + i * .07, .25, .12)); break;
   }
 }

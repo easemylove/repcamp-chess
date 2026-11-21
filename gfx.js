@@ -14,7 +14,7 @@ export const C = {
 const TEX = [];
 export function regTex(t) { t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; TEX.push(t); return t; }
 export function setTexFilter(nearest) {
-  for (const t of TEX) { const f = nearest ? THREE.NearestFilter : THREE.LinearFilter; t.magFilter = f; t.minFilter = f; t.needsUpdate = true; }
+  for (const t of TEX) { const f = nearest ? THREE.NearestFilter : THREE.LinearFilter; t.magFilter = f; t.minFilter = f; if (t.image) t.needsUpdate = true; }
 }
 
 export function canvasTex(w, h, draw, repeat) {

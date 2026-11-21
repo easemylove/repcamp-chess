@@ -68,7 +68,18 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 #mini .mat .who{opacity:.65;margin-right:5px}
 #mini .mat img{width:15px;height:15px;margin-right:-4px}
 #mini .mat b{margin-left:8px;color:var(--lim);font-weight:600}
-#matInfo{opacity:.75}
+#matInfo,#lastMv{opacity:.75}
+#clock{font-family:"IBM Plex Mono";font-weight:600;font-size:13px;display:flex;gap:8px}#clock:empty{display:none}
+#clock span{padding:0 4px}#clock span.on{background:var(--pap);color:var(--bak)}#clock span.low{background:var(--mal);color:var(--pap);animation:blink .6s steps(2) infinite}
+.panel .row.tc button{font-size:13px;padding:6px}
+#moves{font-size:12px;line-height:1.5;max-height:22vh;overflow:auto;margin:0 0 10px;columns:2;column-gap:14px;opacity:.9}#moves:empty{display:none}
+#moves i{font-style:normal;opacity:.55;margin-right:4px}
+#passport{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+#passport .st{width:46px;height:46px;border:2px dashed rgba(255,255,255,.35);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;text-align:center;opacity:.6;line-height:1.1}
+#passport .st.ok{border:0;opacity:1;transform:rotate(var(--r))}#passport .st.ok img{width:46px;height:46px}
+#emo{position:absolute;right:10px;bottom:calc(env(safe-area-inset-bottom) + 12px);display:none;flex-direction:column;gap:5px;pointer-events:auto}
+#emo.on{display:flex}#emo button{background:var(--bak);border:2px solid var(--pap);box-shadow:3px 3px 0 var(--my);padding:5px 9px;font-size:12px;font-weight:600}
+@media (orientation:portrait){#emo{right:6px;bottom:calc(env(safe-area-inset-bottom) + 64px)}#emo button{font-size:11px;padding:4px 6px}}
 #coach{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 84px);width:min(92vw,440px);background:var(--pap);color:var(--bak);border:3px solid var(--bak);box-shadow:5px 5px 0 var(--my);padding:9px 12px 10px;display:none;pointer-events:auto;font-size:13px;line-height:1.4}
 #coach.on{display:block;animation:cin .25s steps(4)}
 @keyframes cin{from{transform:translateX(-50%) translateY(-8px);opacity:0}}
@@ -110,9 +121,10 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 <div id="menu" class="panel">
   <h2>REP CAMP</h2>
   <div class="list">
+    <button id="continueBtn" style="display:none">продолжить партию<span class="time" id="continueInfo"></span></button>
     <button data-go="story">смена · сюжет</button>
     <button data-go="ai">против компа</button>
-    <button id="hot">вдвоём на одном экране</button>
+    <button data-go="hotset">вдвоём на одном экране</button>
     <button data-go="online">онлайн по ссылке</button>
     <button data-go="settings">настройки</button>
   </div>
@@ -122,6 +134,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 <div id="ai" class="panel">
   <h2>ПРОТИВ КОМПА</h2>
   <div class="row"><button id="sideW" class="sel">за лагерь</button><button id="sideB">за оргов</button></div>
+  <div class="row tc"><button data-tc="none" class="sel">без часов</button><button data-tc="5+3">5+3</button><button data-tc="10+0">10 мин</button></div>
   <div class="list">
     <button data-lvl="0">начинашка<span class="time">зевает фигуры, учится</span></button>
     <button data-lvl="1">продолжашка<span class="time">играет прилично, иногда тупит</span></button>
@@ -131,9 +144,18 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <button class="back" data-go="menu">← назад</button>
 </div>
 
+<div id="hotset" class="panel">
+  <h2>ВДВОЁМ</h2>
+  <p>один телефон или комп на двоих. доска поворачивается к тому, чей ход.</p>
+  <div class="row tc"><button data-tc="none" class="sel">без часов</button><button data-tc="5+3">5+3</button><button data-tc="10+0">10 мин</button></div>
+  <div class="list"><button id="hot">поехали</button></div>
+  <button class="back" data-go="menu">← назад</button>
+</div>
+
 <div id="story" class="panel">
   <h2>СМЕНА</h2>
-  <p>одна смена Rep Camp: от заезда до финала «лагерь против оргов». задачи и партии по расписанию.</p>
+  <p>одна смена Rep Camp: от заезда до финала «лагерь против оргов». за каждую главу — штамп в паспорт кайфарика.</p>
+  <div id="passport"></div>
   <div class="list" id="chapters"></div>
   <button class="back" data-go="menu">← назад</button>
 </div>
@@ -142,6 +164,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <h2>ОНЛАЙН</h2>
   <p id="onState">создай комнату и кинь ссылку другу. ходы летят через интернет, регистрация не нужна.</p>
   <input id="onLink" readonly placeholder="тут появится ссылка">
+  <div class="row tc"><button data-tc="none" class="sel">без часов</button><button data-tc="5+3">5+3</button><button data-tc="10+0">10 мин</button></div>
   <div class="list">
     <button id="onHost">создать комнату</button>
     <button id="onCopy">поделиться ссылкой</button>
@@ -158,6 +181,21 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <button class="back" data-go="menu">← назад</button>
 </div>
 
+<div id="pause" class="panel">
+  <h2>ПАУЗА</h2>
+  <div id="moves"></div>
+  <div class="list">
+    <button id="pResume">продолжить</button>
+    <button id="pTop">вид сверху</button>
+    <button id="pMini">схема доски</button>
+    <button id="undo">вернуть ход</button>
+    <button id="pDraw">предложить ничью</button>
+    <button id="pResign">сдаться</button>
+    <button data-go="settings">настройки</button>
+    <button id="pExit">выйти в меню</button>
+  </div>
+</div>
+
 <div id="end" class="panel">
   <h2 id="endT">МАТ</h2>
   <p id="endS"></p>
@@ -166,21 +204,22 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 <div id="hud">
   <div id="bar">
-    <div id="info"><div id="turn"></div><div id="who"></div><div id="matInfo"></div></div>
-    <div id="btns"><button id="hintBtn">подсказка</button><button id="miniBtn">схема</button><button id="viewBtn">вид</button><button id="topBtn">сверху</button><button id="undo">назад</button><button id="menuBtn">меню</button></div>
+    <div id="info"><div id="turn"></div><div id="clock"></div><div id="who"></div><div id="lastMv"></div><div id="matInfo"></div></div>
+    <div id="btns"><button id="hintBtn">подсказка</button><button id="viewBtn">вид</button><button id="menuBtn">пауза</button></div>
   </div>
   <div id="status"></div>
   <div id="mini"><div class="mat" id="matTop"></div><canvas id="miniC" width="480" height="480"></canvas><div class="mat" id="matBot"></div></div>
-  <div id="coach"><div class="who">тренер</div><div id="coachT"></div><div id="coachB"></div></div>
+  <div id="emo"><button data-e="sudaa">сюдаа</button><button data-e="skaifom">с кайфом!</button><button data-e="oi">ой</button><button data-e="gg">gg</button></div>
+  <div id="coach"><div class="who" id="coachWho">тренер</div><div id="coachT"></div><div id="coachB"></div></div>
 </div>
 <div id="pop"></div>
 <div id="dialog"><div id="dWho"></div><div id="dText"></div></div>
 <div id="promo"><p>в кого превращаемся?</p><button data-p="q">ферзь</button><button data-p="r">ладья</button><button data-p="b">слон</button><button data-p="n">конь</button></div>
 
-<script src="chess.js?v=1795255430"></script>
-<script type="importmap">{"imports":{"three":"./three.module.min.js?v=1795255430"}}</script>
+<script src="chess.js?v=1795256270"></script>
+<script type="importmap">{"imports":{"three":"./three.module.min.js?v=1795256270"}}</script>
 <script type="module">
-  import './main.js?v=1795255430';
+  import './main.js?v=1795256270';
   document.fonts.ready.then(() => { const l = document.getElementById('load'); l.style.opacity = 0; setTimeout(() => l.remove(), 450); });
 </script>
 </body>

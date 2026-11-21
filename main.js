@@ -1,10 +1,11 @@
 // Rep Camp Chess — партия, режимы, камера, сценки, интерфейс.
 import * as THREE from 'three';
-import { Retro, mat, C } from './gfx.js?v=1795255430';
-import { buildWorld, BT } from './world.js?v=1795255430';
-import { makePiece } from './figures.js?v=1795255430';
-import { initAudio, sfx, setMusic, setSfx } from './audio.js?v=1795255430';
-import { CHAPTERS, preparePuzzle } from './story.js?v=1795255430';
+import { Retro, mat, C } from './gfx.js?v=1795256270';
+import { buildWorld, BT } from './world.js?v=1795256270';
+import { makePiece } from './figures.js?v=1795256270';
+import { initAudio, sfx, setMusic, setSfx } from './audio.js?v=1795256270';
+import * as AU from './audio.js?v=1795256270';
+import { CHAPTERS, preparePuzzle } from './story.js?v=1795256270';
 
 const $ = s => document.querySelector(s);
 const Chess = window.Chess;
@@ -13,13 +14,15 @@ const Chess = window.Chess;
 const LS = { get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} } };
 let saved = {}; try { saved = JSON.parse(LS.get('rcSet') || '{}'); } catch (_) {}
 const SET = Object.assign({ gfx: 'ps1', crt: false, scenes: true, music: true, sfx: true, sharp: 240, flip: true, mini: true, coach: true }, saved);
+if (saved.scenes === undefined) SET.scenes = 'some';
 const saveSet = () => LS.set('rcSet', JSON.stringify(SET));
 
 // ---------- рендер ----------
 const retro = new Retro($('#c'));
 const scene = new THREE.Scene();
 const cam = new THREE.PerspectiveCamera(50, 1, .1, 200);
-const world = buildWorld(scene);
+const camL = new THREE.PointLight('#dfe6ff', 9, 0, 1.1);   // мягкая подсветка от камеры: тёмные орги не сливаются
+const world = buildWorld(scene); scene.add(camL);
 function applySet() {
   retro.sharp = SET.sharp; retro.setMode(SET.gfx); retro.crt = SET.crt; retro.resize();
   setMusic(SET.music); setSfx(SET.sfx);
@@ -152,7 +155,7 @@ function updCam(dt) {
   for (const key of ['th', 'ph', 'dist', 'tx', 'ty', 'tz']) orbit[key] += (goal[key] - orbit[key]) * k;
   const hf = 2 * Math.atan(Math.tan(cam.fov * Math.PI / 360) * cam.aspect);
   const need = (top ? 4.6 : 5.6) / Math.tan(hf / 2);
-  const d = Math.max(orbit.dist, auto ? orbit.dist : need * (top ? 1 : .85));
+  const d = Math.max(orbit.dist, auto ? orbit.dist : need * (top ? 1 : (portrait ? .74 : .85)));
   const ph = Math.min(orbit.ph, 1.52);
   const p = V(orbit.tx + Math.sin(orbit.th) * Math.cos(ph) * d, orbit.ty + Math.sin(ph) * d, orbit.tz + Math.cos(orbit.th) * Math.cos(ph) * d);
   const look = V(orbit.tx, orbit.ty, orbit.tz);
@@ -161,7 +164,7 @@ function updCam(dt) {
   const pan = V(Math.sin(orbit.th), 0, Math.cos(orbit.th)).multiplyScalar(panK); p.add(pan); look.add(pan);
   if (cine.k > 0) { p.lerp(cine.pos, cine.k); look.lerp(cine.look, cine.k); }
   cam.position.copy(p); cam.up.set(top && cine.k < .5 ? -Math.sin(orbit.th) : 0, top && cine.k < .5 ? 0 : 1, top && cine.k < .5 ? -Math.cos(orbit.th) : 0);
-  cam.lookAt(look);
+  cam.lookAt(look); camL.position.copy(cam.position);
 }
 function viewForTurn() { if (mode === 'hot' && SET.flip) setView(game.turn()); }
 
@@ -188,7 +191,10 @@ async function walk(f, to, opts = {}) {
 const WORDS = { p: ['ПЛЮХ', 'СНЕЖОК'], n: ['ИГОГО', 'ВЖУХ'], b: ['ДЗЫНЬ', 'ОП'], r: ['БАМ', 'ТЫДЫЩ'], q: ['ЧЕСС И КАЙФ', 'ВОТ ТАК'], k: ['ПОДУШКОЙ', 'ХРЯСЬ'] };
 const CRY = ['СЮДАА', 'С КАЙФОМ!'];   // фирменное: победа и взятие
 const pickOne = a => a[(Math.random() * a.length) | 0];
-function pop(text, color = C.malina) { const e = $('#pop'); e.textContent = text; e.style.color = color; e.classList.remove('on'); void e.offsetWidth; e.classList.add('on'); }
+// записанные голосом Андрея фразы: положить mp3 в assets/voice/ и вписать имя сюда (sudaa, skaifom, chessikaif, oi)
+const VOICES = [];
+function voiceFor(t) { const v = /СЮДА/.test(t) ? 'sudaa' : /КАЙФОМ/.test(t) ? 'skaifom' : /ЧЕСС И КАЙФ/.test(t) ? 'chessikaif' : /^ОЙ/.test(t) ? 'oi' : null; if (v && VOICES.includes(v) && AU.voice) AU.voice(v); }
+function pop(text, color = C.malina) { voiceFor(text); const e = $('#pop'); e.textContent = text; e.style.color = color; e.classList.remove('on'); void e.offsetWidth; e.classList.add('on'); }
 async function cineTo(pos, look, dur = .5) { const p0 = cine.k > 0 ? cine.pos.clone() : cam.position.clone(), l0 = cine.k > 0 ? cine.look.clone() : V(orbit.tx, orbit.ty, orbit.tz); const k0 = cine.k; await tween(dur, k => { cine.pos.lerpVectors(p0, pos, k); cine.look.lerpVectors(l0, look, k); cine.k = k0 + (1 - k0) * k; }); }
 async function cineOut(dur = .6) { const k0 = cine.k; await tween(dur, k => cine.k = k0 * (1 - k)); }
 
@@ -209,7 +215,9 @@ async function captureScene(att, vic, toPos) {
   const head = () => vic.root.position.clone().add(V(0, .75 * vic.scale, 0));
   const fallBack = (ax = -1.45) => tween(.35, k => { vic.stand.rotation.x = ax * k; }, ease.in);
 
-  if (att.type === 'p') {
+  const variant = chooseVariant();
+  if (variant !== 'own') await genericScene(variant, att, vic, dir);
+  else if (att.type === 'p') {
     att.posing = true; att.holdR = true;
     await tween(.25, k => p.armR.rotation.x = -2.8 * k);
     const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(.08, 0), mat('#ffffff')); scene.add(ball);
@@ -269,7 +277,7 @@ async function captureScene(att, vic, toPos) {
     await tween(.35, k => vic.stand.rotation.z = 1.5 * k, ease.in);
     p.handR.remove(pil);
   }
-  if (vic.root.visible && att.type !== 'r') { vic.root.visible = false; burst(vic); }
+  if (vic.root.visible && (att.type !== 'r' || variant !== 'own')) { vic.root.visible = false; burst(vic); }
   vic.root.visible = false;
   await wait(.45);
   att.posing = false; att.holdR = false;
@@ -278,6 +286,30 @@ async function captureScene(att, vic, toPos) {
   await walk(att, toPos);
   toGrave(vic);
   await cineOut(.55);
+}
+
+// общие сценки — для разнообразия, любая фигура может так взять
+let lastVar = '';
+function chooseVariant() { const opts = ['own', 'own', 'dance', 'cannon', 'slip']; let v; do { v = pickOne(opts); } while (v === lastVar && v !== 'own'); lastVar = v; return v; }
+async function genericScene(v, att, vic, dir) {
+  const p = att.p; att.posing = true; att.holdR = true;
+  if (v === 'dance') {            // батл: крутанулся — соперник повторил и упал
+    sfx('promo'); const a0 = att.root.rotation.y, y0 = att.root.position.y;
+    await tween(.8, k => { att.root.rotation.y = a0 + k * Math.PI * 4; att.root.position.y = y0 + Math.abs(Math.sin(k * Math.PI * 4)) * .3; }, ease.lin);
+    att.root.rotation.y = a0; att.root.position.y = y0;
+    const b0 = vic.root.rotation.y; await tween(.5, k => vic.root.rotation.y = b0 + k * Math.PI * 2.5, ease.in);
+    await tween(.3, k => vic.stand.rotation.z = 1.5 * k, ease.in);
+  } else if (v === 'cannon') {    // хлопушка: конфетти — и соперник улетает вверх
+    if (p.armL) await tween(.25, k => { p.armL.rotation.x = -2.8 * k; p.armR.rotation.x = -2.8 * k; });
+    sfx('pop'); stars(vic.root.position.clone().add(V(0, .6, 0)), 22);
+    const v0 = vic.root.position.clone(); await tween(.7, k => { vic.root.position.y = v0.y + Math.sin(k * Math.PI / 2) * 2.6; vic.root.rotation.y += .4; }, ease.out);
+  } else {                         // гололёд: показал пальцем — соперник уехал и упал
+    if (p.armR) await tween(.2, k => p.armR.rotation.x = -1.6 * k);
+    sfx('whoosh'); const v0 = vic.root.position.clone();
+    await tween(.5, k => { vic.root.position.copy(v0).addScaledVector(dir, k * 1.3); vic.stand.rotation.x = -.5 * k; }, ease.out);
+    await tween(.25, k => vic.stand.rotation.x = -.5 - k, ease.in); puff(vic.root.position.clone().add(V(0, .1, 0)), 10);
+  }
+  if (p.armL) p.armL.rotation.x = att.baseArm.L;
 }
 
 async function quickCapture(att, vic, toPos) {
@@ -293,6 +325,7 @@ async function doMove(mvIn) {
   const coachIt = coachFor(mover);
   const preP = coachIt ? (hintCache && hintCache.fen === fenBefore ? Promise.resolve(hintCache.r) : analyse(fenBefore)) : null;
   const mv = game.move(mvIn); if (!mv) return null;
+  if (clk && game.history().length > 1) clk[mover] += clk.inc;
   hintMove = null; hintM.visible = false; hanging = []; coachHide();
   if (coachIt) { mv._fen = fenBefore; mv._pre = preP; mv._post = analyse(game.fen()); }
   busy = true; selected = null; showMoves([]); selM.visible = false; checkM.visible = false;
@@ -301,7 +334,11 @@ async function doMove(mvIn) {
   const vic = vicSq ? figs[vicSq] : null; if (vicSq) delete figs[vicSq];
   const to = sqPos(mv.to);
   sfx('move');
-  if (vic) { inCut = !!SET.scenes; if (SET.scenes) await captureScene(f, vic, to); else await quickCapture(f, vic, to); inCut = false; skip = false; }
+  if (vic) {
+    const full = SET.scenes === true || SET.scenes === 'all' || (SET.scenes === 'some' && (fullShown < 4 || VAL[vic.type] >= 3 || mv.san.includes('+')));
+    if (full) fullShown++;
+    inCut = full; if (full) await captureScene(f, vic, to); else await quickCapture(f, vic, to); inCut = false; skip = false;
+  }
   else if (mv.flags.includes('k') || mv.flags.includes('q')) {
     const r = mv.color === 'w' ? '1' : '8'; const rf = mv.flags.includes('k') ? 'h' + r : 'a' + r, rt = mv.flags.includes('k') ? 'f' + r : 'd' + r;
     const rook = figs[rf]; delete figs[rf];
@@ -326,10 +363,10 @@ async function doMove(mvIn) {
 let mode = 'title';           // title | ai | hot | online | story
 let mySide = 'w', level = 1, inCut = false;
 const LEVELS = [
-  { name: 'начинашка', skill: 0, depth: 1, rnd: .4 },
-  { name: 'продолжашка', skill: 4, depth: 4, rnd: .12 },
-  { name: 'кайфарик-про', skill: 11, depth: 8, rnd: 0 },
-  { name: 'гроссорг', skill: 20, depth: 13, rnd: 0, time: 1500 },
+  { name: 'начинашка', skill: 0, depth: 2, rnd: .12 },
+  { name: 'продолжашка', skill: 5, depth: 6, rnd: .03 },
+  { name: 'кайфарик-про', skill: 12, depth: 10, rnd: 0 },
+  { name: 'гроссорг', skill: 20, depth: 14, rnd: 0, time: 1500 },
 ];
 const SIDE = { w: 'лагерь', b: 'орги' };
 
@@ -337,7 +374,7 @@ const SIDE = { w: 'лагерь', b: 'орги' };
 let engine, engCb;
 function eng() {
   if (engine) return engine;
-  engine = new Worker('stockfish.js?v=1795255430');
+  engine = new Worker('stockfish.js?v=1795256270');
   engine.onmessage = e => { const l = String(e.data); if (engCb && l.startsWith('bestmove')) { const c = engCb; engCb = null; c(l.split(/\s+/)[1]); } };
   engine.postMessage('uci'); engine.postMessage('isready');
   return engine;
@@ -363,6 +400,7 @@ async function aiTurn() {
 }
 
 async function afterMove(mv) {
+  if (ended) return;
   updHud();
   if (mv._post && !game.game_over()) {
     busy = true; const r = await coachReview(mv); busy = false;
@@ -372,7 +410,7 @@ async function afterMove(mv) {
   if (mode === 'ai' && game.turn() !== mySide) aiTurn();
   if (mode === 'hot') viewForTurn();
   if (mode === 'story') storyAfter(mv);
-  refreshHanging();
+  refreshHanging(); saveGame();
 }
 
 // ---------- тренер для начинашек ----------
@@ -383,7 +421,7 @@ const NAME_INS = { p: 'пешкой', n: 'конём', b: 'слоном', r: 'л
 const NAME = { p: 'пешка', n: 'конь', b: 'слон', r: 'ладья', q: 'ферзь', k: 'король' };
 function coachEng() {
   if (coachW) return coachW;
-  coachW = new Worker('stockfish.js?v=1795255430'); let last = { cp: 0, mate: null, pv: [] };
+  coachW = new Worker('stockfish.js?v=1795256270'); let last = { cp: 0, mate: null, pv: [] };
   coachW.onmessage = e => {
     const l = String(e.data);
     if (l.startsWith('info') && l.includes(' pv ') && !l.includes('bound')) { const mm = l.match(/ score (cp|mate) (-?\d+)/); if (mm) last = { cp: mm[1] === 'cp' ? +mm[2] : 0, mate: mm[1] === 'mate' ? +mm[2] : null, pv: l.split(' pv ')[1].trim().split(/\s+/) }; }
@@ -428,12 +466,13 @@ async function coachReview(mv) {
   const played = mv.from + mv.to + (mv.promotion || ''), isBest = pre.best && (pre.best === played || pre.best === mv.from + mv.to);
   const bestSan = pre.best ? sanOf(mv._fen, pre.best) : null;
   const who = mode === 'hot' ? SIDE[mv.color] + ', ' : '';
-  if (loss >= 15 && !isBest) {
+  const opening = game.history().length <= 10;   // в дебюте движок на малой глубине придирается к нормальным ходам
+  if (loss >= (opening ? 22 : 15) && !isBest) {
     sfx('deny');
     const ans = await coachAsk(`${who}ой. ${mv.san} — зевок. ${reasonAfter(post, mv.color)}${bestSan ? ` лучше было ${bestSan}.` : ''}`, ['вернуть ход', 'играю дальше']);
     return ans === 0 ? 'undo' : 'go';
   }
-  if (loss >= 9 && !isBest) coachSay(`${who}${mv.san} — так себе. ${reasonAfter(post, mv.color)}${bestSan ? ` сильнее было ${bestSan}.` : ''}`, 6500);
+  if (loss >= 12 && !isBest && !opening) coachSay(`${who}${mv.san} — так себе. ${reasonAfter(post, mv.color)}${bestSan ? ` сильнее было ${bestSan}.` : ''}`, 6500);
   else if (isBest && (mv.captured || mv.san.includes('+') || Math.random() < .3)) coachSay(pickOne(['с кайфом! лучший ход', 'сюдаа! это ход движка', 'с кайфом! так и надо', 'чесс и кайф. сильнее не найти']), 3500);
   else if (loss < 3 && mv.captured && Math.random() < .5) coachSay(pickOne(['с кайфом!', 'сюдаа!']), 2500);
   return 'go';
@@ -465,11 +504,11 @@ function refreshHanging() {
 }
 function canMoveNow() { return mode === 'hot' || (mode === 'ai' && game.turn() === mySide) || (mode === 'story' && game.turn() === 'w'); }
 let coachTimer = null;
-function coachSay(text, ms = 4000) { const el = $('#coach'); $('#coachT').textContent = text; $('#coachB').innerHTML = ''; el.classList.add('on'); clearTimeout(coachTimer); coachTimer = setTimeout(() => el.classList.remove('on'), ms); }
+function coachSay(text, ms = 4000, who = 'тренер') { const el = $('#coach'); $('#coachWho').textContent = who; $('#coachT').textContent = text; $('#coachB').innerHTML = ''; el.classList.add('on'); clearTimeout(coachTimer); coachTimer = setTimeout(() => el.classList.remove('on'), ms); }
 function coachHide() { clearTimeout(coachTimer); $('#coach').classList.remove('on'); }
-function coachAsk(text, buttons) {
+function coachAsk(text, buttons, who = 'тренер') {
   return new Promise(res => {
-    clearTimeout(coachTimer); const el = $('#coach'); $('#coachT').textContent = text; const bx = $('#coachB'); bx.innerHTML = '';
+    clearTimeout(coachTimer); const el = $('#coach'); $('#coachWho').textContent = who; $('#coachT').textContent = text; const bx = $('#coachB'); bx.innerHTML = '';
     buttons.forEach((t, i) => { const b = document.createElement('button'); b.textContent = t; b.onclick = e => { e.stopPropagation(); sfx('blip'); el.classList.remove('on'); res(i); }; bx.appendChild(b); });
     el.classList.add('on');
   });
@@ -488,28 +527,56 @@ async function giveHint() {
 }
 
 function canTouch() {
-  if (busy || inCut) return false;
+  if (busy || inCut || ended) return false;
   if (mode === 'hot') return true;
   if (mode === 'ai' || mode === 'online') return game.turn() === mySide;
   if (mode === 'story') return story && story.active && game.turn() === 'w';
   return false;
 }
 
-async function endGame() {
-  const w = game.in_checkmate() ? (game.turn() === 'w' ? 'b' : 'w') : null;
+// фразы победы: мешок без повторов (пока не прозвучат все, ни одна не повторится, и не две подряд)
+const WIN = {
+  w: [['СЮДАА!', 'партия за лагерем. орги идут мыть посуду'], ['С КАЙФОМ!', 'мат, и никто не душнил'], ['СЮДААА!', 'король оргов ушёл в баню думать о жизни'],
+      ['ЧЕСС И КАЙФ', 'красиво. номинируем на Rep Awards'], ['ЗАБРАЛИ!', 'чистый мат, даже судья хлопает'], ['СЮДАА, СЮДАА', 'орги уже просят реванш на весенней смене'],
+      ['С КАЙФОМ!', 'глинтвейн сегодня за счёт оргов'], ['ВОТ ТАК', 'мат быстрее, чем остыл глинтвейн'], ['КАЙФАРИКИ!', 'эту партию будут пересказывать у костра'],
+      ['СЮДАА!', 'двигаешь фигурки как продолжашка со стажем'], ['С КАЙФОМ И С МАТОМ', 'орги ушли совещаться в столовую'], ['ПОБЕДА', 'запишем в протокол и в легенды лагеря']],
+  b: [['СЮДАА!', 'орги победили. лагерь отправляется на зарядку'], ['С КАЙФОМ!', 'опыт оргов не пропьёшь даже глинтвейном'], ['ОРГИ ЗНАЮТ', 'кайфарики, это был урок. лекция завтра в 11'],
+      ['СЮДААА!', 'мат. кто проиграл, тот моет кружки'], ['ЧЕСС И КАЙФ', 'орги забирают партию и последний пряник'], ['ЗАБРАЛИ!', 'орги сегодня в форме. реванш после бани'],
+      ['С КАЙФОМ!', 'главный орг доволен, бейдж сияет'], ['ВОТ ТАК', 'организаторы тоже умеют двигать фигурки'], ['СЮДАА!', 'штаб оргов празднует. тихо, без музлота'],
+      ['ПОБЕДА ОРГОВ', 'расписание на завтра не меняется']],
+};
+function fromBag(key, list) {
+  let st = null; try { st = JSON.parse(LS.get('rcBag_' + key) || 'null'); } catch (_) {}
+  if (!st || !Array.isArray(st.left) || !st.left.length || st.n !== list.length) {
+    const idx = [...list.keys()]; for (let i = idx.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [idx[i], idx[j]] = [idx[j], idx[i]]; }
+    if (st && idx[0] === st.last && idx.length > 1) [idx[0], idx[1]] = [idx[1], idx[0]];
+    st = { left: idx, last: st ? st.last : -1, n: list.length };
+  }
+  const i = st.left.shift(); st.last = i; LS.set('rcBag_' + key, JSON.stringify(st)); return list[i];
+}
+let ended = false;
+async function endGame(o = {}) {
+  if (ended) return; ended = true; clearSave(); coachHide();
+  const w = o.winner || (game.in_checkmate() ? (game.turn() === 'w' ? 'b' : 'w') : null);
   let title, sub;
-  if (w) { title = 'МАТ'; sub = w === 'w' ? 'кайфарики победили. сюдаа! орги идут мыть посуду' : 'орги победили. лагерь отправляется на зарядку'; pop('СЮДАА!', w === 'w' ? C.malina : C.myata); }
+  if (w) {
+    const [cry, line] = fromBag(w, WIN[w]);
+    title = o.reason === 'resign' ? 'СДАЛИСЬ' : o.reason === 'flag' ? 'ВРЕМЯ ВЫШЛО' : 'МАТ'; sub = line;
+    pop(cry, w === 'w' ? C.malina : C.myata);
+  }
+  else if (o.reason === 'agreed') { title = 'НИЧЬЯ'; sub = pickOne(['по рукам. все в баню', 'ничья по согласию. пошли к костру', 'мир, дружба, глинтвейн']); }
   else if (game.in_stalemate()) { title = 'ПАТ'; sub = 'ничья. все в баню'; }
   else { title = 'НИЧЬЯ'; sub = 'мир, дружба, глинтвейн'; }
   if (w) {
     const k = figs[kingSq(w === 'w' ? 'b' : 'w')];
-    k.posing = true; await tween(.6, t => k.stand.rotation.x = -1.45 * t, ease.in); burst(k);
+    if (k) { k.posing = true; await tween(.6, t => k.stand.rotation.x = -1.45 * t, ease.in); burst(k); }
     for (const f of Object.values(figs)) if (f.color === w) { const y0 = f.root.position.y; tween(1.6, t => f.root.position.y = y0 + Math.abs(Math.sin(t * Math.PI * 4)) * .35, ease.lin); }
     stars(V(0, 2, 0), 30);
   }
-  const iWon = mode === 'hot' || !w ? null : (w === mySide);
+  const iWon = mode === 'hot' || !w ? null : (w === (mode === 'story' ? 'w' : mySide));
   sfx(iWon === false ? 'lose' : 'win');
-  if (mode === 'story') return storyEnd(w === 'w');
+  updHud();
+  if (mode === 'story') { ended = false; return storyEnd(w === 'w'); }
   if (mode === 'online' && conn) conn.send({ t: 'over' });
   setTimeout(() => showEnd(title, sub), 900);
 }
@@ -561,7 +628,7 @@ function tapSq(sq) {
 }
 function humanMove(m) {
   if (mode === 'story' && story.check && !story.check(m)) return;
-  if (mode === 'online' && conn) conn.send({ t: 'move', ...m });
+  if (mode === 'online' && conn) conn.send({ t: 'move', ...m, n: game.history().length, tm: clk ? clk[game.turn()] : null });
   return queueMove(m);
 }
 function askPromo(color) {
@@ -597,7 +664,77 @@ function updHud() {
   $('#who').textContent = who;
   status(game.in_check() ? 'шах!' : '');
   $('#undo').style.display = mode === 'ai' || mode === 'hot' ? '' : 'none';
-  $('#hintBtn').style.display = coachFor(mode === 'ai' ? mySide : game.turn()) ? '' : 'none';
+  $('#pDraw').style.display = $('#pResign').style.display = ended ? 'none' : '';
+  $('#hintBtn').style.display = !ended && coachFor(mode === 'ai' ? mySide : game.turn()) ? '' : 'none';
+  $('#emo').classList.toggle('on', mode === 'online' && !!conn);
+  const h = game.history(), n = h.length;
+  $('#lastMv').textContent = !n ? '' : n % 2 ? `${(n + 1) / 2}. ${h[n - 1]}` : `${n / 2}. ${h[n - 2]} ${h[n - 1]}`;
+  clockTxt = '';
+}
+// ---------- часы ----------
+let clk = null, clockTxt = '';
+function makeClock(tc) { if (!tc || tc === 'none') return null; const [m, i] = tc.split('+').map(Number); return { w: m * 60000, b: m * 60000, inc: (i || 0) * 1000, tc }; }
+const fmtT = ms => { const x = Math.ceil(Math.max(0, ms) / 1000); return Math.floor(x / 60) + ':' + String(x % 60).padStart(2, '0'); };
+const isPaused = () => mode !== 'online' && ($('#pause').classList.contains('on') || $('#settings').classList.contains('on') || $('#dialog').classList.contains('on') || !!$('#coachB').children.length && $('#coach').classList.contains('on'));
+function tickClock(dt) {
+  if (!clk || ended || mode === 'title' || game.history().length < 1 || busy || inCut || isPaused()) return renderClock();
+  const c = game.turn(), before = clk[c]; clk[c] -= dt * 1000;
+  if (clk[c] < 10000 && Math.ceil(before / 1000) !== Math.ceil(clk[c] / 1000)) sfx('tick');
+  if (clk[c] <= 0) {
+    clk[c] = 0; sfx('flag');
+    if (mode === 'online' && conn) conn.send({ t: 'flag', c });
+    endGame({ reason: 'flag', winner: c === 'w' ? 'b' : 'w' });
+  }
+  renderClock();
+}
+function renderClock() {
+  if (!clk || mode === 'title') { if (clockTxt !== '-') { $('#clock').innerHTML = ''; clockTxt = '-'; } return; }
+  const t = game.turn(), cls = c => (!ended && c === t ? 'on' : '') + (clk[c] < 20000 && !ended && c === t ? ' low' : '');
+  const html = `<span class="${cls('w')}">${SIDE.w} ${fmtT(clk.w)}</span><span class="${cls('b')}">${SIDE.b} ${fmtT(clk.b)}</span>`;
+  if (html !== clockTxt) { $('#clock').innerHTML = html; clockTxt = html; }
+}
+// ---------- сдаться и ничья ----------
+function myColor() { return mode === 'hot' ? game.turn() : mode === 'story' ? 'w' : mySide; }
+async function resign() {
+  hideAll(); if (ended || mode === 'title') return;
+  const loser = myColor();
+  const a = await coachAsk(`${SIDE[loser]} сдаются? партия закончится`, ['сдаться', 'играем дальше'], 'судья');
+  if (a !== 0 || ended) return;
+  if (mode === 'online' && conn) conn.send({ t: 'resign', c: loser });
+  endGame({ reason: 'resign', winner: loser === 'w' ? 'b' : 'w' });
+}
+async function offerDraw() {
+  hideAll(); if (ended || mode === 'title') return;
+  if (mode === 'hot') {
+    const other = game.turn() === 'w' ? 'b' : 'w';
+    const a = await coachAsk(`${SIDE[game.turn()]} предлагают ничью. ${SIDE[other]}, согласны?`, ['ничья', 'играем'], 'судья');
+    if (a === 0) endGame({ reason: 'agreed' }); return;
+  }
+  if (mode === 'online') { if (!conn) return; conn.send({ t: 'drawOffer' }); coachSay('предложили ничью. ждём ответ', 6000, 'судья'); return; }
+  coachSay('орги совещаются…', 8000, 'судья');
+  const r = await analyse(game.fen(), 10); if (ended) return;
+  const mine = myColor() === 'w' ? r.cpW : -r.cpW;
+  if (game.history().length >= 20 && Math.abs(r.cpW) <= 60) { coachHide(); endGame({ reason: 'agreed' }); }
+  else coachSay(mine < -60 ? 'орги отказываются: им тут нравится' : game.history().length < 20 ? 'орги отказываются: рано, двигаем фигурки дальше' : 'орги отказываются: доиграем', 4500, 'судья');
+}
+// ---------- сохранение партии ----------
+const SAVE_KEY = 'rcSave';
+function saveGame() { if (!(mode === 'ai' || mode === 'hot') || ended) return; LS.set(SAVE_KEY, JSON.stringify({ mode, pgn: game.pgn(), mySide, level, clk })); }
+function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch (_) {} }
+function loadSave() { try { const x = JSON.parse(LS.get(SAVE_KEY) || 'null'); return x && x.pgn !== undefined ? x : null; } catch (_) { return null; } }
+function renderContinue() {
+  const sv = loadSave(), b = $('#continueBtn'); if (!sv) { b.style.display = 'none'; return; }
+  const c = new Chess(); if (sv.pgn) c.load_pgn(sv.pgn); const n = c.history().length;
+  if (!n) { b.style.display = 'none'; return; }
+  b.style.display = ''; $('#continueInfo').textContent = (sv.mode === 'ai' ? `против: ${LEVELS[sv.level].name}` : 'вдвоём') + ` · ход ${Math.ceil(n / 2)}`;
+}
+function pauseOpen() {
+  if (mode === 'title') return;
+  if (!$('#coachB').children.length) coachHide();
+  const h = game.history(); let html = '';
+  for (let i = 0; i < h.length; i += 2) html += `<div><i>${i / 2 + 1}.</i>${h[i]} ${h[i + 1] || ''}</div>`;
+  $('#moves').innerHTML = html; $('#pTop').textContent = top ? 'вид 3D' : 'вид сверху'; $('#pMini').textContent = 'схема доски: ' + (SET.mini ? 'да' : 'нет');
+  updHud(); show('pause'); const mv = $('#moves'); mv.scrollTop = mv.scrollHeight;
 }
 function show(id) { document.querySelectorAll('.panel').forEach(p => p.classList.toggle('on', p.id === id)); }
 function hideAll() { document.querySelectorAll('.panel').forEach(p => p.classList.remove('on')); }
@@ -605,35 +742,51 @@ function showEnd(title, sub) { $('#endT').textContent = title; $('#endS').textCo
 
 function startGame(m, opts = {}) {
   mode = m; auto = false; hideAll(); $('#hud').classList.add('on'); $('#title').classList.remove('on');
-  game = new Chess(opts.fen); rebuild(); world.dark = opts.dark || 0;
+  game = new Chess(opts.fen); if (opts.pgn) game.load_pgn(opts.pgn); rebuild(); world.dark = opts.dark || 0;
+  ended = false; fullShown = 0; clk = opts.clk ? { ...opts.clk } : makeClock(opts.tc); clockTxt = '';
+  if (AU.setTrack) AU.setTrack(opts.dark ? 'night' : 'game');
   if (m === 'ai') { mySide = opts.side || 'w'; level = opts.level ?? level; }
   Object.assign(goal, { tx: 0, ty: .2, tz: .4 });
   setView(m === 'hot' ? game.turn() : mySide);
   hintMove = null; hintM.visible = false; hanging = []; hintCache = null; coachHide();
   updHud();
   if (m === 'ai' && game.turn() !== mySide) setTimeout(aiTurn, 600);
-  if (coachFor(m === 'ai' ? mySide : 'w') && !SET.coachSeen) { SET.coachSeen = true; saveSet(); setTimeout(() => coachSay('я тренер. подсвечу, если зевнёшь фигуру, а по кнопке «подсказка» покажу хороший ход. выключить — в настройках', 7000), 900); }
+  if ((m === 'ai' || m === 'hot') && !SET.tutDone) { SET.tutDone = true; saveSet(); setTimeout(() => say(TUTOR.concat(SET.coach ? [TUTOR_COACH] : [])), 700); }
+  saveGame();
 }
+const TUTOR = [['тренер', 'привет! тапни свою фигуру — она подпрыгнет, а клетки, куда можно пойти, загорятся'], ['тренер', 'потом тапни нужную клетку. ходить можно и по схеме внизу, так даже точнее'], ['тренер', 'доску крути пальцем, «вид» меняет ракурс. в «паузе» — список ходов, ничья, сдаться и настройки']];
+const TUTOR_COACH = ['тренер', 'если зевнёшь фигуру, я скажу и дам вернуть ход. «подсказка» покажет хороший ход. выключить меня можно в настройках'];
+let fullShown = 0;
 function toMenu() {
   mode = 'title'; auto = true; chain = Promise.resolve(); busy = false; inCut = false; skip = false; cine.k = 0; story = null;
   Object.assign(goal, { ph: .32, dist: 15, ty: 1 }); top = false;
-  $('#hud').classList.remove('on'); $('#dialog').classList.remove('on'); show('menu');
+  $('#hud').classList.remove('on'); $('#dialog').classList.remove('on'); coachHide(); show('menu'); renderContinue();
+  if (AU.setTrack) AU.setTrack('menu');
 }
 
 // меню
 const bind = (sel, fn) => $(sel).addEventListener('click', e => { e.stopPropagation(); sfx('blip'); fn(e); });
-document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { sfx('blip'); show(b.dataset.go); if (b.dataset.go === 'story') renderStory(); }));
-document.querySelectorAll('[data-lvl]').forEach(b => b.addEventListener('click', () => { sfx('blip'); level = +b.dataset.lvl; startGame('ai', { level, side: $('#sideB').classList.contains('sel') ? 'b' : 'w' }); }));
+document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { sfx('blip'); const go = b.dataset.go === 'menu' && mode !== 'title' ? 'pause' : b.dataset.go; if (go === 'pause') return pauseOpen(); show(go); if (go === 'story') renderStory(); }));
+document.querySelectorAll('.row.tc button').forEach(b => b.addEventListener('click', () => { sfx('blip'); b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('sel', x === b)); }));
+const tcOf = panel => { const b = $(`#${panel} .row.tc .sel`); return b ? b.dataset.tc : 'none'; };
+document.querySelectorAll('[data-lvl]').forEach(b => b.addEventListener('click', () => { sfx('blip'); level = +b.dataset.lvl; startGame('ai', { level, side: $('#sideB').classList.contains('sel') ? 'b' : 'w', tc: tcOf('ai') }); }));
 bind('#sideW', () => { $('#sideW').classList.add('sel'); $('#sideB').classList.remove('sel'); });
 bind('#sideB', () => { $('#sideB').classList.add('sel'); $('#sideW').classList.remove('sel'); });
-bind('#hot', () => startGame('hot'));
-bind('#menuBtn', () => { if (mode === 'online' && conn) conn.send({ t: 'bye' }); if (mode === 'online') closeRelay(); toMenu(); });
+bind('#hot', () => startGame('hot', { tc: tcOf('hotset') }));
+bind('#menuBtn', () => pauseOpen());
+bind('#pResume', () => hideAll());
+bind('#pExit', () => { if (mode === 'online' && conn) conn.send({ t: 'bye' }); if (mode === 'online') closeRelay(); toMenu(); });
+bind('#pTop', () => { hideAll(); top ? setView(mode === 'hot' ? game.turn() : mySide) : setView('top'); });
+bind('#pMini', () => { SET.mini = !SET.mini; saveSet(); pauseOpen(); });
+bind('#pResign', () => resign());
+bind('#pDraw', () => offerDraw());
+bind('#continueBtn', () => { const sv = loadSave(); if (!sv) return; startGame(sv.mode, { level: sv.level, side: sv.mySide, pgn: sv.pgn, clk: sv.clk }); if (sv.mode === 'ai' && game.turn() !== mySide && !game.game_over()) setTimeout(aiTurn, 600); });
+const EMO = { sudaa: 'СЮДАА', skaifom: 'С КАЙФОМ!', oi: 'ОЙ', gg: 'GG' }; let emoT = 0;
+document.querySelectorAll('#emo button').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); if (performance.now() - emoT < 1500 || !conn) return; emoT = performance.now(); conn.send({ t: 'emo', e: b.dataset.e }); pop(EMO[b.dataset.e], C.limonad); }));
 bind('#viewBtn', () => { const seq = ['w', 'side', 'b', 'side']; viewI = (viewI + 1) % 4; setView(seq[viewI]); });
-bind('#topBtn', () => top ? setView(mode === 'hot' ? game.turn() : mySide) : setView('top'));
-bind('#undo', () => { if (busy) return; if (mode === 'ai') { game.undo(); if (game.turn() !== mySide) game.undo(); } else game.undo(); hintMove = null; hintM.visible = false; coachHide(); rebuild(); updHud(); viewForTurn(); refreshHanging(); });
+bind('#undo', () => { hideAll(); if (busy || ended) return; if (mode === 'ai') { game.undo(); if (game.turn() !== mySide) game.undo(); } else game.undo(); hintMove = null; hintM.visible = false; coachHide(); rebuild(); updHud(); viewForTurn(); refreshHanging(); });
 bind('#hintBtn', () => giveHint());
-bind('#miniBtn', () => { SET.mini = !SET.mini; saveSet(); });
-bind('#again', () => { if (mode === 'online') { conn && conn.send({ t: 'again' }); startGame('online'); return; } startGame(mode, { level, side: mySide }); });
+bind('#again', () => { const tc = clk ? clk.tc : 'none'; if (mode === 'online') { conn && conn.send({ t: 'again', tc }); startGame('online', { tc }); return; } startGame(mode, { level, side: mySide, tc }); });
 bind('#endMenu', () => toMenu());
 let viewI = 0;
 
@@ -666,30 +819,53 @@ const myId = Math.random().toString(36).slice(2, 10);
 let conn = null, relay = null, helloT = null;
 function openRelay(topic, onMsg, onOpen, onFail) {
   closeRelay();
-  let es; try { es = new EventSource(RELAY + topic + '/sse'); } catch (_) { onFail(); return null; }
-  let opened = false; const seen = new Set();
-  es.onopen = () => { if (!opened) { opened = true; onOpen(); } };
-  es.onmessage = e => { try { const d = JSON.parse(e.data); if (d.event !== 'message' || seen.has(d.id)) return; seen.add(d.id); const m = JSON.parse(d.message); if (m.who !== myId) onMsg(m); } catch (_) {} };
-  es.onerror = () => { if (!opened) { es.close(); onFail(); } };
-  relay = { topic, send: o => fetch(RELAY + topic, { method: 'POST', body: JSON.stringify({ ...o, who: myId }) }).catch(() => status('сообщение не ушло, проверь интернет')), close() { es.close(); } };
+  let es, opened = false, lastId = null, retry = null; const seen = new Set();
+  const connect = () => {
+    try { es = new EventSource(RELAY + topic + '/sse' + (lastId ? '?since=' + lastId : '')); } catch (_) { onFail(); return; }
+    es.onopen = () => { if (!opened) { opened = true; onOpen(); } else { status(''); if (conn) relay.send({ t: 'sync?', n: game.history().length }); } };
+    es.onmessage = e => { try { const d = JSON.parse(e.data); if (d.event !== 'message' || seen.has(d.id)) return; seen.add(d.id); lastId = d.id; const m = JSON.parse(d.message); if (m.who !== myId) onMsg(m); } catch (_) {} };
+    es.onerror = () => {
+      es.close();
+      if (!opened) return onFail();
+      if (!relay) return;
+      status('связь моргнула, переподключаемся…'); clearTimeout(retry); retry = setTimeout(() => relay && connect(), 1500);
+    };
+  };
+  connect();
+  relay = { topic, send: o => fetch(RELAY + topic, { method: 'POST', body: JSON.stringify({ ...o, who: myId }) }).catch(() => status('сообщение не ушло, проверь интернет')), close() { clearTimeout(retry); es && es.close(); } };
   return relay;
 }
 function closeRelay() { clearInterval(helloT); if (relay) relay.close(); relay = null; conn = null; }
 const noNet = () => { $('#onState').textContent = 'онлайн тут не работает: страница не пускает в интернет. открой игру по ссылке easemylove.github.io/repcamp-chess'; };
 function onlineMsg(d) {
-  if (d.t === 'start') { clearInterval(helloT); conn = relay; startGame('online', {}); mySide = 'b'; setView('b'); updHud(); pop('ПОЕХАЛИ', C.myata); }
-  if (d.t === 'move') queueMove({ from: d.from, to: d.to, promotion: d.promotion });
-  if (d.t === 'again') { startGame('online'); updHud(); }
+  if (d.t === 'start') { clearInterval(helloT); conn = relay; startGame('online', { tc: d.tc }); mySide = 'b'; setView('b'); updHud(); pop('ПОЕХАЛИ', C.myata); }
+  if (d.t === 'move') chain = chain.then(() => {
+    const n = game.history().length;
+    if (d.n !== undefined && d.n < n) return;                        // уже было
+    if (d.n !== undefined && d.n > n) { conn && conn.send({ t: 'sync?', n }); return; }   // пропустили ход — просим всю партию
+    if (clk && d.tm != null) clk[game.turn()] = d.tm;
+    return doMove({ from: d.from, to: d.to, promotion: d.promotion });
+  }).catch(e => console.error(e));
+  if (d.t === 'sync?' && conn && game.history().length > (d.n || 0)) conn.send({ t: 'state', pgn: game.pgn(), clk });
+  if (d.t === 'state') { const c = new Chess(); if (c.load_pgn(d.pgn) && c.history().length > game.history().length) { game = c; if (d.clk) clk = d.clk; rebuild(); updHud(); if (game.game_over()) endGame(); } }
+  if (d.t === 'again') { startGame('online', { tc: d.tc }); updHud(); }
+  if (d.t === 'emo' && EMO[d.e]) pop(EMO[d.e], C.limonad);
+  if (d.t === 'resign') endGame({ reason: 'resign', winner: d.c === 'w' ? 'b' : 'w' });
+  if (d.t === 'flag') { if (clk) clk[d.c] = 0; endGame({ reason: 'flag', winner: d.c === 'w' ? 'b' : 'w' }); }
+  if (d.t === 'drawOffer') coachAsk('соперник предлагает ничью', ['ничья', 'играем'], 'судья').then(a => { conn && conn.send({ t: 'drawAns', ok: a === 0 }); if (a === 0) endGame({ reason: 'agreed' }); });
+  if (d.t === 'drawAns') { if (d.ok) { coachHide(); endGame({ reason: 'agreed' }); } else coachSay('соперник хочет доиграть', 3500, 'судья'); }
   if (d.t === 'bye') { status('соперник вышел'); pop('СОПЕРНИК УШЁЛ', C.limonad); conn = null; updHud(); }
 }
 let guestId = null;
+let hostTc = 'none';
 function hostOnline() {
+  hostTc = tcOf('online');
   const code = Math.random().toString(36).slice(2, 7);
   show('online'); $('#onState').textContent = 'открываем комнату…'; $('#onLink').value = ''; guestId = null;
   openRelay('repcamp-' + code, d => {
     if (d.t === 'hello') {
-      if (!guestId) { guestId = d.who; conn = relay; mySide = 'w'; startGame('online'); mySide = 'w'; setView('w'); updHud(); pop('ПОЕХАЛИ', C.malina); }
-      if (d.who === guestId) relay.send({ t: 'start', fen: game.fen() });
+      if (!guestId) { guestId = d.who; conn = relay; mySide = 'w'; startGame('online', { tc: hostTc }); mySide = 'w'; setView('w'); updHud(); pop('ПОЕХАЛИ', C.malina); }
+      if (d.who === guestId) relay.send({ t: 'start', tc: clk ? clk.tc : 'none' });
       return;
     }
     if (d.who === guestId) onlineMsg(d);
@@ -713,6 +889,7 @@ bind('#onCopy', () => { const v = $('#onLink').value; if (!v) return; if (naviga
 let story = null;
 const progress = () => +(LS.get('rcStory') || 0);
 function renderStory() {
+  $('#passport').innerHTML = CHAPTERS.map((ch, i) => i < progress() ? `<div class="st ok" style="--r:${(i * 37) % 21 - 10}deg" title="${ch.title}"><img src="data:image/png;base64,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" alt=""></div>` : `<div class="st">${ch.time}</div>`).join('');
   const box = $('#chapters'); box.innerHTML = '';
   CHAPTERS.forEach((ch, i) => {
     const b = document.createElement('button'); const open = i <= progress();
@@ -789,7 +966,7 @@ crowd();
 
 // ---------- титул ----------
 function begin() {
-  initAudio(); applySet();
+  initAudio(); applySet(); if (AU.preloadVoices && VOICES.length) AU.preloadVoices(VOICES);
   $('#title').classList.remove('on');
   const j = new URLSearchParams(location.search).get('join');
   if (j) { history.replaceState(null, '', location.pathname); mode = 'online'; joinOnline(j); } else toMenu();
@@ -797,7 +974,7 @@ function begin() {
 $('#title').addEventListener('click', begin);
 addEventListener('keydown', e => {
   if (mode === 'title' && $('#title').classList.contains('on') && (e.key === 'Enter' || e.key === ' ')) begin();
-  if (e.key === 'Escape' && mode !== 'title') toMenu();
+  if (e.key === 'Escape' && mode !== 'title') { $('#pause').classList.contains('on') ? hideAll() : pauseOpen(); }
   if ($('#dialog').classList.contains('on') && (e.key === 'Enter' || e.key === ' ')) nextLine();
 });
 auto = true; Object.assign(orbit, { th: .6, ph: .32, dist: 15, ty: 1 }); Object.assign(goal, orbit);
@@ -890,7 +1067,7 @@ mc.addEventListener('pointerdown', e => {
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now; const t = now / 1000;
-  updTweens(dt);
+  updTweens(dt); tickClock(dt);
   for (const f of Object.values(figs)) f.update(t, dt);
   for (const f of grave) f.update(t, dt);
   for (const f of spectators) f.update(t, dt);

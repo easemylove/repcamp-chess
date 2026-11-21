@@ -1,7 +1,8 @@
 // Кубиковые человечки: лагерь (белые) против оргов (чёрные).
 import * as THREE from 'three';
-import { mat, canvasTex, imgTex, rnd, C } from './gfx.js?v=1795255430';
+import { mat, canvasTex, imgTex, rnd, C } from './gfx.js?v=1795256270';
 
+const ORG = '#3d2f5c';   // куртка оргов: чуть светлее баклажана, чтобы не сливались ночью
 const SKIN = ['#f2c9a0', '#e0b088', '#c98f66', '#ffdcbc', '#a8724e'];
 const G = {}; // кэш геометрий
 const box = (w, h, d) => { const k = `${w}|${h}|${d}`; return G[k] || (G[k] = new THREE.BoxGeometry(w, h, d)); };
@@ -102,7 +103,7 @@ export function makePiece(type, color, seed = 1) {
   const root = new THREE.Group();
   const f = { type, color, root, p: {}, walk: 0, phase: R() * 6, idle: R() * 6, colors: [] };
   // подставка
-  const disc = M(new THREE.CylinderGeometry(.37, .39, .05, 10), W ? '#ffffff' : C.bak, 0, .025, 0, root);
+  const disc = M(new THREE.CylinderGeometry(.37, .39, .05, 10), W ? '#ffffff' : '#4a3b6b', 0, .025, 0, root);
   M(new THREE.CylinderGeometry(.395, .395, .02, 10), W ? C.malina : C.myata, 0, .006, 0, root);
   f.disc = disc;
   const stand = piv(0, .05, 0, root);
@@ -120,7 +121,7 @@ export function makePiece(type, color, seed = 1) {
       beanie(p.head, hatc, hatc === '#ffffff' ? C.malina : '#ffffff');
       f.colors = [jacketW, hatc, '#8b87a3'];
     } else {
-      p = humanoid({ jacket: C.bak, pants: '#1a1328', skin, badge: C.malina, stripe: C.malina, face: pick(['stern', 'smile', 'cool']) }, stand);
+      p = humanoid({ jacket: ORG, pants: '#1a1328', skin, badge: C.malina, stripe: C.malina, face: pick(['stern', 'smile', 'cool']) }, stand);
       cap(p.head, '#3d2f57', C.malina);
       M(box(.05, .12, .04), '#1a1328', 0, -.02, .02, p.handR); M(box(.012, .08, .012), '#1a1328', .015, .08, .02, p.handR); // рация
       f.colors = [C.bak, C.malina, '#3d2f57'];
@@ -129,7 +130,7 @@ export function makePiece(type, color, seed = 1) {
     const hc = W ? C.malina : '#463761', mc = W ? '#ffffff' : C.malina;
     const hr = horse(stand, hc, mc); Object.assign(f.p, hr);
     const rider = piv(0, .3, -.03, hr.horse);
-    p = humanoid(W ? { jacket: jacketW, pants: '#8b87a3', skin, scarf: C.myata } : { jacket: C.bak, pants: '#1a1328', skin, badge: C.malina, face: 'stern' }, rider);
+    p = humanoid(W ? { jacket: jacketW, pants: '#8b87a3', skin, scarf: C.myata } : { jacket: ORG, pants: '#1a1328', skin, badge: C.malina, face: 'stern' }, rider);
     p.legL.rotation.x = -1.35; p.legR.rotation.x = -1.35; p.legL.rotation.z = -.35; p.legR.rotation.z = .35;
     p.armL.rotation.x = -.7; p.armR.rotation.x = -.7;
     rider.scale.setScalar(.85);
@@ -145,7 +146,7 @@ export function makePiece(type, color, seed = 1) {
       p.armR.rotation.x = -.9; f.p.mug = mug;
       f.colors = [jacketW, C.malina, '#7a4a2e'];
     } else {
-      p = humanoid({ jacket: C.bak, pants: '#1a1328', skin, badge: C.myata, face: 'glasses', hair: '#3a2a20' }, stand);
+      p = humanoid({ jacket: ORG, pants: '#1a1328', skin, badge: C.myata, face: 'glasses', hair: '#3a2a20' }, stand);
       tallHat(p.head, '#463761', C.myata);
       const clk = piv(0, -.02, .05, p.handR); M(box(.18, .08, .07), '#6b4a3a', 0, .03, 0, clk); M(box(.06, .06, .01), '#ffffff', -.045, .035, .04, clk); M(box(.06, .06, .01), '#ffffff', .045, .035, .04, clk); M(box(.03, .03, .03), C.malina, -.05, .085, 0, clk); M(box(.03, .03, .03), C.malina, .05, .085, 0, clk);
       p.armR.rotation.x = -.9; f.p.clock = clk;
@@ -191,7 +192,7 @@ export function makePiece(type, color, seed = 1) {
       p.armR.rotation.x = -2.6; p.armR.rotation.z = .2; f.p.cup = cup;
       f.colors = ['#ffffff', C.limonad, C.myata];
     } else {
-      p = humanoid({ jacket: C.bak, pants: '#1a1328', skin, badge: C.malina, stripe: C.malina, face: 'cool', hair: '#1a1328' }, stand);
+      p = humanoid({ jacket: ORG, pants: '#1a1328', skin, badge: C.malina, stripe: C.malina, face: 'cool', hair: '#1a1328' }, stand);
       M(box(.12, .1, .12), '#1a1328', 0, .3, -.06, p.head); // пучок
       crown(p.head, C.malina, .22, .8);
       const mega = piv(0, 0, .05, p.handR); const cn = M(new THREE.CylinderGeometry(.04, .09, .2, 6), C.malina, 0, 0, .08, mega); cn.rotation.x = Math.PI / 2; M(box(.03, .06, .03), '#ffffff', 0, -.04, 0, mega);
@@ -210,7 +211,7 @@ export function makePiece(type, color, seed = 1) {
       crown(p.head, C.limonad, .23, .9);
       f.colors = [C.myata, '#ffffff', C.limonad];
     } else { // главный орг
-      p = humanoid({ jacket: C.bak, pants: '#1a1328', skin, badge: C.limonad, stripe: C.limonad, face: 'stern', hair: '#3a2a20' }, stand);
+      p = humanoid({ jacket: ORG, pants: '#1a1328', skin, badge: C.limonad, stripe: C.limonad, face: 'stern', hair: '#3a2a20' }, stand);
       crown(p.head, C.limonad, .23, .9);
       M(box(.02, .12, .12), '#1a1328', .12, .12, 0, p.head); M(box(.02, .02, .12), '#1a1328', .12, .06, .09, p.head); M(box(.03, .03, .03), C.malina, .1, .06, .15, p.head); // гарнитура
       const clip = piv(0, 0, .05, p.handL); M(box(.15, .2, .02), '#6b4a3a', 0, .05, 0, clip); M(box(.12, .14, .01), '#ffffff', 0, .04, .012, clip);
